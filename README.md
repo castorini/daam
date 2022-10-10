@@ -1,3 +1,3 @@
 # What the DAAM!?
 
-Check out our demo: https://huggingface.co/spaces/tetrisd/daam
+Check out our demo: http://daam.ralphtang.com:8080
