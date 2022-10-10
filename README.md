@@ -1,4 +1,4 @@
-# What the DAAM!?
+# What the DAAM!? Diffusion Attentive Attribution Maps
 
 Check out our demo: http://daam.ralphtang.com:8080.
 
