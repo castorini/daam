@@ -2,7 +2,7 @@
 
 Check out our demo: http://daam.ralphtang.com:8080.
 
-To run the demo locally, run this in an environment with PyTorch:
+To run the demo locally, execute this in an environment with PyTorch:
 ```bash
 git clone https://github.com/castorini/daam && cd daam
 cd space
