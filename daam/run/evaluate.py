@@ -7,7 +7,7 @@ import mmcv
 import torch
 import numpy as np
 
-from dib.run.analyze import expand_m
+from daam.run.analyze import expand_m
 from diffusers import StableDiffusionPipeline
 
 CLASSES = [

@@ -13,7 +13,7 @@ import torch
 import numpy as np
 from nltk.corpus import wordnet as wn
 
-from dib.run.analyze import expand_m, nlp_cache
+from daam.run.analyze import expand_m, nlp_cache
 
 CLASSES = [
     'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',

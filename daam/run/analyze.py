@@ -228,44 +228,6 @@ def main():
                                 if '</w>' not in word:
                                     continue
                                 else:
-                                    if args.save_intermediates:
-                                        for int_idx in range(50):
-                                            plt.clf()
-                                            int_heat_map = get_global_heat_map(idx=int_idx, factors={1, 2, 4, 8, 16, 32}).detach()
-
-                                            x = int_heat_map[idx]
-                                            x = x.unsqueeze(0).unsqueeze(0) / n
-                                            x = F.interpolate(x.float().detach(), size=(512, 512), mode="bicubic",
-                                                              align_corners=False)
-                                            # m[m < 0.5 * m.max()] = 0
-                                            x = (x - x.min()) / (x.max() - x.min() + 1e-8)
-                                            viz = 'both'  # 'spotlight' or 'heat' or 'both
-                                            x = x.cpu().detach()
-
-                                            # print(doc[w_idx].pos_)
-
-                                            if doc[w_idx].pos_ == 'NOUN' or doc[w_idx].pos_ == 'PROPN':  # or doc[w_idx].pos_ == 'ADJ':
-                                                spotlit_im = out.intermediates[int_idx].cpu().float().detach()
-                                                if viz == 'heat' or viz == 'both':
-                                                    spotlit_im2 = torch.cat((spotlit_im, (1 - x.squeeze(0)).pow(1)), dim=0)
-                                                    w = w.replace('</w>', '')
-                                                    # plt.title(w)
-                                                    # plt.show()
-                                                    plt.imshow(x.squeeze().numpy(), cmap='jet')
-                                                    plt.imshow(spotlit_im2.permute(1, 2, 0).numpy())
-                                                    plt.title(w)
-                                                    plt.savefig((of / f"{w}.inter.{int_idx}.{w_idx}.heat.png").__str__())
-                                                if viz == 'spotlight' or viz == 'both':
-                                                    spotlit_im2 = spotlit_im * x.squeeze(0)
-                                                    # spotlit_im = torch.cat((spotlit_im, (1 - x.squeeze(0)).pow(1)), dim=0)
-                                                    w = w.replace('</w>', '')
-                                                    # plt.title(w)
-                                                    # plt.show()
-                                                    # plt.imshow(x.squeeze().numpy(), cmap='jet')
-                                                    plt.imshow(spotlit_im2.permute(1, 2, 0).numpy())
-                                                    plt.title(w)
-                                                    plt.savefig((of / f"{w}.spotlight.inter.{int_idx}.{w_idx}.png").__str__())
-
                                     mplot = expand_m(m, n)
                                     m_locplot = expand_m(m_loc, n)
                                     viz = 'all'  # 'spotlight' or 'heat' or 'all
