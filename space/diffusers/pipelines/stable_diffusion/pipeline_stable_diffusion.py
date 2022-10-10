@@ -346,4 +346,8 @@ class StableDiffusionPipeline(DiffusionPipeline):
         if not return_dict:
             return (image, has_nsfw_concept)
 
+        if any(has_nsfw_concept):
+            gpu_image.zero_()
+            image[0] = None
+
         return StableDiffusionPipelineOutput(images=gpu_image, pil_images=image, nsfw_content_detected=has_nsfw_concept, text_embeddings=text_embeddings, words=words, intermediates=inters)

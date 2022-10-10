@@ -72,6 +72,7 @@ class StableDiffusionSafetyChecker(PreTrainedModel):
                 images[idx] = np.zeros(images[idx].shape)  # black image
 
         if any(has_nsfw_concepts):
+            images = []
             logger.warning(
                 "Potential NSFW content was detected in one or more images. A black image will be returned instead."
                 " Try again with a different prompt and/or seed."

@@ -25,3 +25,5 @@ torch>=1.4
 torchvision
 transformers>=4.21.0
 spacy
+gradio
+ftfy
