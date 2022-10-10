@@ -37,13 +37,18 @@ def expand_m(m, n: int = 1, o=512, mode='bicubic'):
 
 
 @torch.no_grad()
-def predict(prompt, threshold):
+def predict(prompt, inf_steps, threshold):
     global lock
     with torch.cuda.amp.autocast(), lock:
+        try:
+            plt.close('all')
+        except:
+            pass
+
         gen.set_state(orig_state.clone())
         clear_heat_maps()
 
-        out = pipe(prompt, guidance_scale=7.5, height=512, width=512, do_intermediates=False, generator=gen, num_inference_steps=50)
+        out = pipe(prompt, guidance_scale=7.5, height=512, width=512, do_intermediates=False, generator=gen, num_inference_steps=int(inf_steps))
         heat_maps = get_global_heat_map()
 
     with torch.cuda.amp.autocast(dtype=torch.float32):
@@ -109,18 +114,31 @@ def predict(prompt, threshold):
     return fig, fig1, fig2
 
 
+def set_prompt(prompt):
+    return prompt
+
+
 with gr.Blocks() as demo:
     md = '''# DAAM: Attention Maps for Interpreting Stable Diffusion
-    Check out the paper: [test](http://google.com)
-    
-    Try `steak and dollars on a plate` or `a fox, a dog, and a wolf in a field`. Can you figure out what went wrong?
+    Check out the paper: [https://arxiv.org](https://arxiv.org). Note that, due to server costs, this demo will transition to HuggingFace Spaces on 2022-10-20.
     '''
     gr.Markdown(md)
 
     with gr.Row():
         with gr.Column():
+            dropdown = gr.Dropdown([
+                'An angry, bald man doing research',
+                'Doing research at Comcast Applied AI labs',
+                'Professor Jimmy Lin from the University of Waterloo',
+                'Yann Lecun teaching machine learning on a chalkboard',
+                'A cat eating cake for her birthday',
+                'Steak and dollars on a plate',
+                'A fox, a dog, and a wolf in a field'
+            ], label='Examples')
+
             text = gr.Textbox(label='Prompt')
-            slider = gr.Slider(0, 1.0, value=0.4, interactive=True, step=0.05, label='Threshold (tau)')
+            slider1 = gr.Slider(15, 35, value=30, interactive=True, step=1, label='Inference steps')
+            slider2 = gr.Slider(0, 1.0, value=0.4, interactive=True, step=0.05, label='Threshold (tau)')
             submit_btn = gr.Button('Submit')
 
         with gr.Tab('Original Image'):
@@ -132,7 +150,9 @@ with gr.Blocks() as demo:
         with gr.Tab('Hard DAAM Maps'):
             p2 = gr.Plot()
         
-        submit_btn.click(fn=predict, inputs=[text, slider], outputs=[p0, p1, p2])
+        submit_btn.click(fn=predict, inputs=[text, slider1, slider2], outputs=[p0, p1, p2])
+        dropdown.change(set_prompt, dropdown, text)
+        dropdown.update()
 
 
 demo.launch(server_name='0.0.0.0', server_port=8080)
