@@ -1,6 +1,6 @@
-# [What the DAAM!?](https://arxiv.org/abs/2210.04885)
+# What the DAAM: Interpreting Stable Diffusion Using Cross Attention
 
-We propose diffusion attentive attribution maps (DAAM), a cross attention-based approach for interpreting Stable Diffusion.
+In [our paper](https://arxiv.org/abs/2210.04885), we propose diffusion attentive attribution maps (DAAM), a cross attention-based approach for interpreting Stable Diffusion.
 Check out our demo: http://daam.ralphtang.com:8080.
 
 To run the demo locally, execute this in an environment with PyTorch:
