@@ -257,8 +257,8 @@ def main():
     print(f'{args.aux_model} P{args.iou_threshold}: ', np.sum((aux_all_iou > args.iou_threshold).astype(np.float32)) / len(aux_all_iou))
     print(f'DAAM s_h: ', np.mean(all_ioas_daam))
     print(f'{args.aux_model} s_h: ', np.mean(all_ioas_aux))
-    print('DAAM AP: ', compute_ap(aps_daam))
-    print('AUX AP: ', compute_ap(aps_aux))
+    print('DAAM mIoU: ', np.mean(aps_daam))
+    print('AUX mIoU: ', np.mean(aps_aux))
 
 
 if __name__ == '__main__':

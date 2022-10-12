@@ -120,7 +120,7 @@ def set_prompt(prompt):
 
 with gr.Blocks() as demo:
     md = '''# DAAM: Attention Maps for Interpreting Stable Diffusion
-    Check out the paper: [https://arxiv.org](https://arxiv.org). Note that, due to server costs, this demo will transition to HuggingFace Spaces on 2022-10-20.
+    Check out the paper: [What the DAAM: Interpreting Stable Diffusion Using Cross Attention](http://arxiv.org/abs/2210.04885). Note that, due to server costs, this demo will transition to HuggingFace Spaces on 2022-10-20.
     '''
     gr.Markdown(md)
 
@@ -134,10 +134,10 @@ with gr.Blocks() as demo:
                 'A cat eating cake for her birthday',
                 'Steak and dollars on a plate',
                 'A fox, a dog, and a wolf in a field'
-            ], label='Examples')
+            ], label='Examples', value='An angry, bald man doing research')
 
-            text = gr.Textbox(label='Prompt')
-            slider1 = gr.Slider(15, 35, value=30, interactive=True, step=1, label='Inference steps')
+            text = gr.Textbox(label='Prompt', value='An angry, bald man doing research')
+            slider1 = gr.Slider(15, 35, value=25, interactive=True, step=1, label='Inference steps')
             slider2 = gr.Slider(0, 1.0, value=0.4, interactive=True, step=0.05, label='Threshold (tau)')
             submit_btn = gr.Button('Submit')
 
