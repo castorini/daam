@@ -1,6 +1,6 @@
 from collections import defaultdict
 from copy import deepcopy
-from typing import List, Type, Dict, Any
+from typing import List, Type, Dict, Any, Literal
 import math
 
 from diffusers import UNet2DConditionModel, StableDiffusionPipeline
@@ -10,11 +10,10 @@ import torch
 import torch.nn.functional as F
 
 from .hook import ObjectHooker, AggregateHooker, UNetCrossAttentionLocator
+from .utils import compute_token_merge_indices
 
 
 __all__ = ['trace', 'DiffusionHeatMapHooker']
-
-from .utils import compute_token_merge_indices
 
 
 class UNetForwardHooker(ObjectHooker[UNet2DConditionModel]):
@@ -38,9 +37,9 @@ class UNetForwardHooker(ObjectHooker[UNet2DConditionModel]):
 
 
 class DiffusionHeatMapHooker(AggregateHooker):
-    def __init__(self, pipeline: StableDiffusionPipeline):
+    def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = True):
         heat_maps = defaultdict(list)
-        modules = [UNetCrossAttentionHooker(x, heat_maps) for x in UNetCrossAttentionLocator().locate(pipeline.unet)]
+        modules = [UNetCrossAttentionHooker(x, heat_maps, weighted=weighted) for x in UNetCrossAttentionLocator().locate(pipeline.unet)]
         self.forward_hook = UNetForwardHooker(pipeline.unet, heat_maps)
         modules.append(self.forward_hook)
         super().__init__(modules)
@@ -94,31 +93,40 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
 
 class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
-    def __init__(self, module: CrossAttention, heat_maps: defaultdict, context_size: int = 77):
+    def __init__(self, module: CrossAttention, heat_maps: defaultdict, context_size: int = 77, weighted: bool = True):
         super().__init__(module)
         self.heat_maps = heat_maps
         self.context_size = context_size
+        self.weighted = weighted
 
     @torch.no_grad()
-    def _up_sample_attn(self, x, factor, method: str = 'bicubic'):
+    def _up_sample_attn(self, x, value, factor, method='bicubic'):
+        # type: (torch.Tensor, torch.Tensor, int, Literal['bicubic', 'conv']) -> torch.Tensor
         weight = torch.full((factor, factor), 1 / factor ** 2, device=x.device)
         weight = weight.view(1, 1, factor, factor)
 
         h = w = int(math.sqrt(x.size(1)))
         maps = []
         x = x.permute(2, 0, 1)
+        value = value.permute(1, 0, 2)
+        weights = value.norm(p=1, dim=-1, keepdim=True).unsqueeze(-1)
 
         with torch.cuda.amp.autocast(dtype=torch.float32):
             for map_ in x:
                 map_ = map_.unsqueeze(1).view(map_.size(0), 1, h, w)
+
                 if method == 'bicubic':
-                    map_ = F.interpolate(map_, size=(64, 64), mode="bicubic", align_corners=False)
+                    map_ = F.interpolate(map_, size=(64, 64), mode='bicubic')# / (factor ** 2)
                     maps.append(map_.squeeze(1))
                 else:
-                    maps.append(F.conv_transpose2d(map_, weight, stride=factor).squeeze(1).cpu())
+                    maps.append(F.conv_transpose2d(map_, weight, stride=factor).squeeze(1))
 
-        maps = torch.stack(maps, 0).sum(1, keepdim=True).cpu()
-        return maps
+        if not self.weighted:
+            weights = 1
+
+        maps = torch.stack(maps, 0)
+
+        return (weights * maps).sum(1, keepdim=True).cpu()
 
     def _hooked_attention(hk_self, self, query, key, value, sequence_length, dim, use_context: bool = True):
         batch_size_attention = query.shape[0]
@@ -134,17 +142,16 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
             )
             factor = int(math.sqrt(4096 // attn_slice.shape[1]))
             attn_slice = attn_slice.softmax(-1)
+            hid_states = torch.einsum("b i j, b j d -> b i d", attn_slice, value[start_idx:end_idx])
 
             if use_context and attn_slice.shape[-1] == hk_self.context_size:
                 if factor >= 1:
                     factor //= 1
-                    maps = hk_self._up_sample_attn(attn_slice, factor)
+                    maps = hk_self._up_sample_attn(attn_slice, value, factor)
                     hk_self.heat_maps[factor].append(maps)
                 # print(attn_slice.size(), query.size(), key.size(), value.size())
 
-            attn_slice = torch.einsum("b i j, b j d -> b i d", attn_slice, value[start_idx:end_idx])
-
-            hidden_states[start_idx:end_idx] = attn_slice
+            hidden_states[start_idx:end_idx] = hid_states
 
         # reshape hidden_states
         hidden_states = self.reshape_batch_dim_to_heads(hidden_states)

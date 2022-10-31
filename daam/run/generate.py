@@ -65,7 +65,7 @@ def main():
 
     with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
         for prompt_id, prompt in tqdm(prompts):
-            with trace(pipe) as tc:
+            with trace(pipe, weighted=True) as tc:
                 out = pipe(prompt, num_inference_steps=30, generator=gen)
                 exp = GenerationExperiment(
                     id=str(prompt_id),
