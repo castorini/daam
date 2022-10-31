@@ -8,7 +8,7 @@ Check out our demo: https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-At
 ## Using DAAM
 
 I still have to package the codebase into a pip package.
-For now, clone the repo and use DAAM directly, e.g.,
+For now, clone the repo, pip install the requirements.txt file, and use DAAM directly, e.g.,
 
 ```python
 from matplotlib import pyplot as plt
