@@ -1,2 +1,2 @@
-from .locator import *
+from .hook import *
 from .trace import *
