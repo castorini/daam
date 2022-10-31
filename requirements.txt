@@ -1,0 +1,5 @@
+diffusers
+spacy
+gradio
+ftfy
+transformers
