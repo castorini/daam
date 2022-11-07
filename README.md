@@ -11,21 +11,29 @@ I still have to package the codebase into a pip package.
 For now, clone the repo, pip install the requirements.txt file, and use DAAM directly, e.g.,
 
 ```python
+from diffusers import StableDiffusionPipeline
 from matplotlib import pyplot as plt
+import torch
 
-from daam.trace import trace
-from daam.utils import expand_image, plot_overlay_heat_map 
+from daam import trace, set_seed, plot_overlay_heat_map, expand_image
 
-# `pipe` is a StableDiffusionPipeline from the `diffusers` package
-with trace(pipe) as trc:
-    output = pipe(prompt)
-    prompt = 'A dog and a cat'
-    
-    heat_map = trc.compute_word_heat_map('dog', prompt)
-    heat_map = expand_image(heat_map)
-    
-    plot_overlay_heat_map(output.images[0], heat_map)
-    plt.show()
+
+model_id = 'CompVis/stable-diffusion-v1-4'
+device = 'cuda'
+
+pipe = StableDiffusionPipeline.from_pretrained(model_id, use_auth_token=True)
+pipe = pipe.to(device)
+
+prompt = 'A dog runs across the field'
+gen = set_seed(0)
+
+with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
+    with trace(pipe, weighted=True) as tc:
+        out = pipe(prompt, num_inference_steps=30, generator=gen)
+        heat_map = tc.compute_global_heat_map(prompt)
+        heat_map = expand_image(heat_map.compute_word_heat_map('dog'))
+        plot_overlay_heat_map(out.images[0], heat_map)
+        plt.show()
 ```
 
 ## Running the Demo
