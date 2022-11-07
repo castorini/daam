@@ -13,7 +13,7 @@ from .hook import ObjectHooker, AggregateHooker, UNetCrossAttentionLocator
 from .utils import compute_token_merge_indices
 
 
-__all__ = ['trace', 'DiffusionHeatMapHooker']
+__all__ = ['trace', 'DiffusionHeatMapHooker', 'HeatMap']
 
 
 class UNetForwardHooker(ObjectHooker[UNet2DConditionModel]):
@@ -36,6 +36,17 @@ class UNetForwardHooker(ObjectHooker[UNet2DConditionModel]):
         return super_return
 
 
+class HeatMap:
+    def __init__(self, tokenizer: Any, prompt: str, heat_maps: torch.Tensor):
+        self.tokenizer = tokenizer
+        self.heat_maps = heat_maps
+        self.prompt = prompt
+
+    def compute_word_heat_map(self, word: str, word_idx: int = None) -> torch.Tensor:
+        merge_idxs = compute_token_merge_indices(self.tokenizer, self.prompt, word, word_idx)
+        return self.heat_maps[merge_idxs].mean(0)
+
+
 class DiffusionHeatMapHooker(AggregateHooker):
     def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = True):
         heat_maps = defaultdict(list)
@@ -50,16 +61,8 @@ class DiffusionHeatMapHooker(AggregateHooker):
     def all_heat_maps(self):
         return self.forward_hook.all_heat_maps
 
-    def compute_word_heat_map(self, word: str, prompt: str, word_idx: int = None, heat_map: torch.Tensor = None, **kwargs) -> torch.Tensor:
-        if heat_map is None:
-            heat_map = self.compute_global_heat_map(**kwargs)
-
-        merge_idxs = compute_token_merge_indices(self.pipe.tokenizer, prompt, word, word_idx)
-
-        return heat_map[merge_idxs].mean(0)
-
-    def compute_global_heat_map(self, time_weights=None, time_idx=None, last_n=None, factors=None):
-        # type: (List[float], int, int, List[float]) -> torch.Tensor
+    def compute_global_heat_map(self, prompt, time_weights=None, time_idx=None, last_n=None, factors=None):
+        # type: (str, List[float], int, int, List[float]) -> HeatMap
         if time_weights is None:
             time_weights = [1.0] * len(self.forward_hook.all_heat_maps)
 
@@ -89,7 +92,9 @@ class DiffusionHeatMapHooker(AggregateHooker):
             all_merges.append(merge_list)
 
         maps = torch.stack([torch.stack(x, 0) for x in all_merges], dim=0)
-        return maps.sum(0).cuda().sum(2).sum(0)
+        maps = maps.sum(0).cuda().sum(2).sum(0)
+
+        return HeatMap(self.pipe.tokenizer, prompt, maps)
 
 
 class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):

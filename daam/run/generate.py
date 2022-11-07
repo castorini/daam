@@ -1,31 +1,15 @@
-from functools import lru_cache
 from pathlib import Path
 import argparse
 import json
 import random
 
 from diffusers import StableDiffusionPipeline
-from matplotlib import pyplot as plt
 from tqdm import tqdm
-import spacy
 import torch
 
 from daam import trace
 from daam.experiment import GenerationExperiment
-from daam.utils import set_seed, expand_image, plot_overlay_heat_map, plot_mask_heat_map
-
-
-nlp = None
-
-
-@lru_cache(maxsize=100000)
-def nlp_cache(prompt: str, type='en_core_web_md'):
-    global nlp
-
-    if nlp is None:
-        nlp = spacy.load(type)
-
-    return nlp(prompt)
+from daam.utils import set_seed
 
 
 def main():
@@ -41,18 +25,9 @@ def main():
 
     if args.action == 'coco':
         with (Path(args.input_folder) / 'captions_val2014.json').open() as f:
-            captions = json.load(f)['annotations']
+            captions = json.load(f)['annotations'][:args.gen_limit]
 
         random.shuffle(captions)
-
-        nouns = []
-        adjectives = []
-
-        for caption in tqdm(captions[:args.gen_limit]):
-            doc = nlp_cache(caption['caption'])
-            nouns.extend([token.text for token in doc if token.pos_ == 'NOUN'])
-            adjectives.extend([token.text for token in doc if token.pos_ == 'ADJ'])
-
         prompts = [(caption['id'], caption['caption']) for caption in captions]
     else:
         prompts = [('prompt', input('> '))]
@@ -69,7 +44,7 @@ def main():
                 out = pipe(prompt, num_inference_steps=30, generator=gen)
                 exp = GenerationExperiment(
                     id=str(prompt_id),
-                    global_heat_map=tc.compute_global_heat_map(),
+                    global_heat_map=tc.compute_global_heat_map(prompt).heat_maps,
                     seed=args.seed,
                     prompt=prompt,
                     image=out.images[0]
