@@ -1,6 +1,6 @@
 # What the DAAM: Interpreting Stable Diffusion Using Cross Attention
 
-**Caveat**: the codebase is in a bit of a mess. I plan to continue refactoring and polishing until it's published. Please contact me (Raphael Tang) if you have any questions.
+I regularly update this codebase. Please submit an issue if you have any questions.
 
 In [our paper](https://arxiv.org/abs/2210.04885), we propose diffusion attentive attribution maps (DAAM), a cross attention-based approach for interpreting Stable Diffusion.
 Check out our demo: https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps.
