@@ -1,5 +1,7 @@
 # What the DAAM: Interpreting Stable Diffusion Using Cross Attention
 
+![example image](example.png)
+
 I regularly update this codebase. Please submit an issue if you have any questions.
 
 In [our paper](https://arxiv.org/abs/2210.04885), we propose diffusion attentive attribution maps (DAAM), a cross attention-based approach for interpreting Stable Diffusion.
@@ -11,8 +13,8 @@ First, install [PyTorch](https://pytorch.org) for your platform.
 Then, install DAAM with `pip install daam`. If you want an editable version, then do `git clone https://github.com/castorini/daam && pip install -e daam`.
 
 Using DAAM is easy.
-You'll need to login using `huggingface-cli login` to get many stable diffusion models.
-Here's a code snippet:
+You'll first need to login using `huggingface-cli login` to get many stable diffusion models.
+Next, use DAAM as follows:
 
 ```python
 from daam import trace, set_seed, plot_overlay_heat_map, expand_image
@@ -38,6 +40,8 @@ with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
         plot_overlay_heat_map(out.images[0], heat_map)
         plt.show()
 ```
+
+We'll have docs soon. 
 
 ## Running the Demo
 
