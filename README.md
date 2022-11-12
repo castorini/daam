@@ -7,15 +7,18 @@ Check out our demo: https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-At
 
 ## Using DAAM
 
-I still have to package the codebase into a pip package.
-For now, clone the repo, pip install the requirements.txt file, and use DAAM directly, e.g.,
+First, install [PyTorch](https://pytorch.org) for your platform.
+Then, install DAAM with `pip install daam`. If you want an editable version, then do `git clone https://github.com/castorini/daam && pip install -e daam`.
+
+Using DAAM is easy.
+You'll need to login using `huggingface-cli login` to get many stable diffusion models.
+Here's a code snippet:
 
 ```python
+from daam import trace, set_seed, plot_overlay_heat_map, expand_image
 from diffusers import StableDiffusionPipeline
 from matplotlib import pyplot as plt
 import torch
-
-from daam import trace, set_seed, plot_overlay_heat_map, expand_image
 
 
 model_id = 'CompVis/stable-diffusion-v1-4'
