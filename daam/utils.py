@@ -27,9 +27,10 @@ def expand_image(im: torch.Tensor, out: int = 512, absolute: bool = False, thres
     return im.squeeze()
 
 
-def plot_overlay_heat_map(im: PIL.Image.Image, heat_map: torch.Tensor):
+def plot_overlay_heat_map(im: PIL.Image.Image | np.ndarray, heat_map: torch.Tensor):
     plt.imshow(heat_map.squeeze().cpu().numpy(), cmap='jet')
-    im = torch.from_numpy(np.array(im)).float() / 255
+    im = np.array(im)
+    im = torch.from_numpy(im).float() / 255
     im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
     plt.imshow(im)
 

@@ -18,13 +18,31 @@ def main():
 
     evaluator = MeanEvaluator() if args.eval_type != 'hungarian' else UnsupervisedEvaluator()
     simplify80 = False
-    vocab = None
+    vocab = []
 
     if args.restrict_set == 'coco27':
         simplify80 = True
         vocab = COCOSTUFF27_LABELS
     elif args.restrict_set == 'coco80':
         vocab = COCO80_LABELS
+
+    if not vocab:
+        for path in tqdm(Path(args.input_folder).glob('*')):
+            if not path.is_dir() or not GenerationExperiment.contains_truth_mask(path):
+                continue
+
+            exp = GenerationExperiment.load(
+                path,
+                args.pred_prefix,
+                composite=args.mask_type == 'composite',
+                simplify80=simplify80
+            )
+
+            vocab.extend(exp.truth_masks)
+            vocab.extend(exp.prediction_masks)
+
+        vocab = list(set(vocab))
+        vocab.sort()
 
     for path in tqdm(Path(args.input_folder).glob('*')):
         if not path.is_dir() or not GenerationExperiment.contains_truth_mask(path):
@@ -40,6 +58,9 @@ def main():
 
         if args.eval_type == 'labeled':
             for word, mask in exp.truth_masks.items():
+                if word not in vocab and args.restrict_set != 'none':
+                    continue
+
                 try:
                     evaluator.log_iou(exp.prediction_masks[word], mask)
                     evaluator.log_intensity(exp.prediction_masks[word])

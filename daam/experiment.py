@@ -1,6 +1,7 @@
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
+import json
 
 import PIL.Image
 import numpy as np
@@ -23,6 +24,9 @@ COCO80_LABELS: List[str] = [
     'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
     'hair drier', 'toothbrush'
 ]
+
+
+UNUSED_LABELS: List[str] = [f'__unused_{i}__' for i in range(1, 200)]
 
 
 COCOSTUFF27_LABELS: List[str] = [
@@ -77,6 +81,7 @@ class GenerationExperiment:
     path: Optional[Path] = None
     truth_masks: Optional[Dict[str, torch.Tensor]] = None
     prediction_masks: Optional[Dict[str, torch.Tensor]] = None
+    annotations: Optional[Dict[str, Any]] = None
 
     def save(self, path: str = None):
         if path is None:
@@ -99,6 +104,16 @@ class GenerationExperiment:
                 im = PIL.Image.fromarray((mask * 255).unsqueeze(-1).expand(-1, -1, 4).byte().numpy())
                 im.save(path / f'{name.lower()}.gt.png')
 
+        self.save_annotations()
+
+    def save_annotations(self, path: Path = None):
+        if path is None:
+            path = self.path
+
+        if self.annotations is not None:
+            with (path / 'annotations.json').open('w') as f:
+                json.dump(self.annotations, f)
+
     def _load_truth_masks(self, simplify80: bool = False) -> Dict[str, torch.Tensor]:
         masks = {}
 
@@ -110,11 +125,11 @@ class GenerationExperiment:
         return masks
 
     def _load_pred_masks(self, pred_prefix, composite=False, simplify80=False, vocab=None):
-        # type: (str, bool, bool, List[str]) -> Dict[str, torch.Tensor]
+        # type: (str, bool, bool, List[str] | None) -> Dict[str, torch.Tensor]
         masks = {}
 
         if vocab is None:
-            vocab = COCOSTUFF27_LABELS
+            vocab = UNUSED_LABELS
 
         if composite:
             im = PIL.Image.open(self.path / f'composite.{pred_prefix}.pred.png')
@@ -136,16 +151,42 @@ class GenerationExperiment:
         im.save(self.path / f'{word.lower()}.{name}.pred.png')
 
     @staticmethod
-    def contains_truth_mask(path: str) -> bool:
-        return any(Path(path).glob('*.gt.png'))
+    def contains_truth_mask(path: str | Path, prompt_id: str = None) -> bool:
+        if prompt_id is None:
+            return any(Path(path).glob('*.gt.png'))
+        else:
+            return any((Path(path) / prompt_id).glob('*.gt.png'))
+
+    @staticmethod
+    def has_annotations(path: str | Path) -> bool:
+        return Path(path).joinpath('annotations.json').exists()
+
+    @staticmethod
+    def has_experiment(path: str | Path, prompt_id: str) -> bool:
+        return (Path(path) / prompt_id / 'generation.pt').exists()
+
+    def _try_load_annotations(self):
+        if not (self.path / 'annotations.json').exists():
+            return None
+
+        return json.load((self.path / 'annotations.json').open())
+
+    def annotate(self, key: str, value: Any) -> 'GenerationExperiment':
+        if self.annotations is None:
+            self.annotations = {}
+
+        self.annotations[key] = value
+
+        return self
 
     @classmethod
     def load(cls, path, pred_prefix='daam', composite=False, simplify80=False, vocab=None):
-        # type: (str, str, bool, bool, List[str]) -> GenerationExperiment
+        # type: (str, str, bool, bool, List[str] | None) -> GenerationExperiment
         path = Path(path)
         exp = torch.load(path / 'generation.pt')
         exp.path = path
         exp.truth_masks = exp._load_truth_masks(simplify80=simplify80)
         exp.prediction_masks = exp._load_pred_masks(pred_prefix, composite=composite, simplify80=simplify80, vocab=vocab)
+        exp.annotations = exp._try_load_annotations()
 
         return exp

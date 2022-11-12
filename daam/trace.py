@@ -121,7 +121,7 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
                 map_ = map_.unsqueeze(1).view(map_.size(0), 1, h, w)
 
                 if method == 'bicubic':
-                    map_ = F.interpolate(map_, size=(64, 64), mode='bicubic')# / (factor ** 2)
+                    map_ = F.interpolate(map_, size=(64, 64), mode='bicubic')
                     maps.append(map_.squeeze(1))
                 else:
                     maps.append(F.conv_transpose2d(map_, weight, stride=factor).squeeze(1))
