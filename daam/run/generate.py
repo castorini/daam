@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--gen-limit', type=int, default=1000)
     parser.add_argument('--template', type=str, default='{numeral} {noun}')
+    parser.add_argument('--scramble-unreal', action='store_true')
     parser.add_argument('--template-data-file', '-tdf', type=str, default='template.tsv')
     parser.add_argument('--regenerate', action='store_true')
     args = parser.parse_args()

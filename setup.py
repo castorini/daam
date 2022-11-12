@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name='daam',
-    version=open('version.txt').read(),
+    version=eval(open('daam/_version.py').read().strip().split('=')[1]),
     author='Raphael Tang',
     license='MIT',
     url='https://github.com/castorini/daam',

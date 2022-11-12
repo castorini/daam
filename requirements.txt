@@ -3,3 +3,4 @@ spacy
 gradio
 ftfy
 transformers
+pandas
