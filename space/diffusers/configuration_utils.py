@@ -44,9 +44,9 @@ class ConfigMixin:
 
     Class attributes:
         - **config_name** (`str`) -- A filename under which the config should stored when calling
-          [`~ConfigMixin.save_config`] (should be overriden by parent class).
+          [`~ConfigMixin.save_config`] (should be overridden by parent class).
         - **ignore_for_config** (`List[str]`) -- A list of attributes that should not be saved in the config (should be
-          overriden by parent class).
+          overridden by parent class).
     """
     config_name = None
     ignore_for_config = []
