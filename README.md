@@ -1,5 +1,7 @@
 # What the DAAM: Interpreting Stable Diffusion Using Cross Attention
 
+[![HF Spaces](https://img.shields.io/badge/HuggingFace%20Space-online-green.svg)](https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps) [![Citation](https://img.shields.io/badge/Citation-arXiv-blue.svg)](https://gist.githubusercontent.com/daemon/1d126b5d72eb40300af5cccb92a232c6/raw/cd276203a7109bd9512f14afc86eebe8f13049ce/daam-citation.bib) [![PyPi version](https://badgen.net/pypi/v/daam/)](https://pypi.com/project/daam) ![Downloads](https://static.pepy.tech/badge/daam/week)
+
 ![example image](example.png)
 
 I regularly update this codebase. Please submit an issue if you have any questions.
