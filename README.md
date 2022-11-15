@@ -1,6 +1,6 @@
 # What the DAAM: Interpreting Stable Diffusion Using Cross Attention
 
-[![HF Spaces](https://img.shields.io/badge/HuggingFace%20Space-online-green.svg)](https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps) [![Citation](https://img.shields.io/badge/Citation-arXiv-orange.svg)](https://gist.githubusercontent.com/daemon/1d126b5d72eb40300af5cccb92a232c6/raw/cd276203a7109bd9512f14afc86eebe8f13049ce/daam-citation.bib) [![PyPi version](https://badgen.net/pypi/v/daam?color=blue)](https://pypi.com/project/daam) ![Downloads](https://static.pepy.tech/personalized-badge/daam?period=week&units=international_system&left_color=grey&right_color=blue&left_text=downloads/week)
+[![HF Spaces](https://img.shields.io/badge/HuggingFace%20Space-online-green.svg)](https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps) [![Citation](https://img.shields.io/badge/Citation-arXiv-orange.svg)](https://gist.githubusercontent.com/daemon/1d126b5d72eb40300af5cccb92a232c6/raw/cd276203a7109bd9512f14afc86eebe8f13049ce/daam-citation.bib) [![PyPi version](https://badgen.net/pypi/v/daam?color=blue)](https://pypi.org/project/daam) ![Downloads](https://static.pepy.tech/personalized-badge/daam?period=week&units=international_system&left_color=grey&right_color=blue&left_text=downloads/week)
 
 ![example image](example.png)
 
