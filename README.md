@@ -44,7 +44,7 @@ with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
 ```
 
 We'll have docs soon.
-In the meantime, checkout the `GenerationExperiment`, `HeatMap`, and `DiffusionHeatMapHooker` classes, as well as the `daam/run/*.py` example scripts.
+In the meantime, check out the `GenerationExperiment`, `HeatMap`, and `DiffusionHeatMapHooker` classes, as well as the `daam/run/*.py` example scripts.
 
 ## Running the Demo
 
