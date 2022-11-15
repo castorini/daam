@@ -35,7 +35,7 @@ prompt = 'A dog runs across the field'
 gen = set_seed(0)
 
 with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
-    with trace(pipe, weighted=True) as tc:
+    with trace(pipe) as tc:
         out = pipe(prompt, num_inference_steps=30, generator=gen)
         heat_map = tc.compute_global_heat_map(prompt)
         heat_map = expand_image(heat_map.compute_word_heat_map('dog'))
@@ -43,7 +43,8 @@ with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
         plt.show()
 ```
 
-We'll have docs soon. 
+We'll have docs soon.
+In the meantime, checkout the `GenerationExperiment`, `HeatMap`, and `DiffusionHeatMapHooker` classes, as well as the `daam/run/*.py` example scripts.
 
 ## Running the Demo
 

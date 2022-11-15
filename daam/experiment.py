@@ -3,14 +3,15 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 import json
 
+from transformers import PreTrainedTokenizer
 import PIL.Image
 import numpy as np
 import torch
 
 from .evaluate import load_mask
+from .utils import plot_overlay_heat_map, expand_image
 
-
-__all__ = ['GenerationExperiment', 'COCO80_LABELS', 'COCOSTUFF27_LABELS']
+__all__ = ['GenerationExperiment', 'COCO80_LABELS', 'COCOSTUFF27_LABELS', 'COCO80_INDICES', 'build_word_list_coco80']
 
 
 COCO80_LABELS: List[str] = [
@@ -25,9 +26,9 @@ COCO80_LABELS: List[str] = [
     'hair drier', 'toothbrush'
 ]
 
+COCO80_INDICES: Dict[str, int] = {x: i for i, x in enumerate(COCO80_LABELS)}
 
 UNUSED_LABELS: List[str] = [f'__unused_{i}__' for i in range(1, 200)]
-
 
 COCOSTUFF27_LABELS: List[str] = [
     'electronic', 'appliance', 'food', 'furniture', 'indoor', 'kitchen', 'accessory', 'animal', 'outdoor', 'person',
@@ -35,6 +36,27 @@ COCOSTUFF27_LABELS: List[str] = [
     'building', 'ground', 'plant', 'sky', 'solid', 'structural', 'water'
 ]
 
+COCO80_ONTOLOGY = {
+    'two-wheeled vehicle': ['bicycle', 'motorcycle'],
+    'vehicle': ['two-wheeled vehicle', 'four-wheeled vehicle'],
+    'four-wheeled vehicle': ['bus', 'truck', 'car'],
+    'four-legged animals': ['livestock', 'pets', 'wild animals'],
+    'livestock': ['cow', 'horse', 'sheep'],
+    'pets': ['cat', 'dog'],
+    'wild animals': ['elephant', 'bear', 'zebra', 'giraffe'],
+    'bags': ['backpack', 'handbag', 'suitcase'],
+    'sports boards': ['snowboard', 'surfboard', 'skateboard'],
+    'utensils': ['fork', 'knife', 'spoon'],
+    'receptacles': ['bowl', 'cup'],
+    'fruits': ['banana', 'apple', 'orange'],
+    'foods': ['fruits', 'meals', 'desserts'],
+    'meals': ['sandwich', 'hot dog', 'pizza'],
+    'desserts': ['cake', 'donut'],
+    'furniture': ['chair', 'couch', 'bench'],
+    'electronics': ['monitors', 'appliances'],
+    'monitors': ['tv', 'cell phone', 'laptop'],
+    'appliances': ['oven', 'toaster', 'refrigerator']
+}
 
 COCO80_TO_27 = {
     'bicycle': 'vehicle', 'car': 'vehicle', 'motorcycle': 'vehicle', 'airplane': 'vehicle', 'bus': 'vehicle',
@@ -54,6 +76,13 @@ COCO80_TO_27 = {
     'refrigerator': 'appliance', 'book': 'indoor', 'clock': 'indoor', 'vase': 'indoor', 'scissors': 'indoor',
     'teddy bear': 'indoor', 'hair drier': 'indoor', 'toothbrush': 'indoor'
 }
+
+
+def build_word_list_coco80() -> Dict[str, List[str]]:
+    words_map = COCO80_ONTOLOGY.copy()
+    words_map = {k: v for k, v in words_map.items() if not any(item in COCO80_ONTOLOGY for item in v)}
+
+    return words_map
 
 
 def _add_mask(masks: Dict[str, torch.Tensor], word: str, mask: torch.Tensor, simplify80: bool = False) -> Dict[str, torch.Tensor]:
@@ -82,6 +111,9 @@ class GenerationExperiment:
     truth_masks: Optional[Dict[str, torch.Tensor]] = None
     prediction_masks: Optional[Dict[str, torch.Tensor]] = None
     annotations: Optional[Dict[str, Any]] = None
+
+    def nsfw(self) -> bool:
+        return np.sum(np.array(self.image)) == 0
 
     def save(self, path: str = None):
         if path is None:
@@ -146,9 +178,22 @@ class GenerationExperiment:
 
         return masks
 
+    def clear_prediction_masks(self, name: str):
+        path = self if isinstance(self, Path) else self.path
+
+        for mask_path in path.glob(f'*.{name}.pred.png'):
+            mask_path.unlink()
+
     def save_prediction_mask(self, mask: torch.Tensor, word: str, name: str):
-        im = PIL.Image.fromarray((mask * 255).unsqueeze(-1).expand(-1, -1, 4).byte().numpy())
-        im.save(self.path / f'{word.lower()}.{name}.pred.png')
+        path = self if isinstance(self, Path) else self.path
+        im = PIL.Image.fromarray((mask * 255).unsqueeze(-1).expand(-1, -1, 4).cpu().byte().numpy())
+        im.save(path / f'{word.lower()}.{name}.pred.png')
+
+    def save_heat_map(self, tokenizer: PreTrainedTokenizer, word: str):
+        from .trace import HeatMap  # because of cyclical import
+        heat_map = HeatMap(tokenizer, self.prompt, self.global_heat_map)
+        heat_map = expand_image(heat_map.compute_word_heat_map(word))
+        plot_overlay_heat_map(self.image, heat_map, word, self.path / f'{word.lower()}.heat_map.png')
 
     @staticmethod
     def contains_truth_mask(path: str | Path, prompt_id: str = None) -> bool:
@@ -158,12 +203,27 @@ class GenerationExperiment:
             return any((Path(path) / prompt_id).glob('*.gt.png'))
 
     @staticmethod
+    def read_seed(path: str | Path, prompt_id: str = None) -> int:
+        if prompt_id is None:
+            return int(Path(path).joinpath('seed.txt').read_text())
+        else:
+            return int(Path(path).joinpath(prompt_id).joinpath('seed.txt').read_text())
+
+    @staticmethod
     def has_annotations(path: str | Path) -> bool:
         return Path(path).joinpath('annotations.json').exists()
 
     @staticmethod
     def has_experiment(path: str | Path, prompt_id: str) -> bool:
         return (Path(path) / prompt_id / 'generation.pt').exists()
+
+    @staticmethod
+    def read_prompt(path: str | Path, prompt_id: str = None) -> str:
+        if prompt_id is None:
+            prompt_id = '.'
+
+        with (Path(path) / prompt_id / 'prompt.txt').open('r') as f:
+            return f.read().strip()
 
     def _try_load_annotations(self):
         if not (self.path / 'annotations.json').exists():

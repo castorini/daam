@@ -10,12 +10,16 @@ setuptools.setup(
     description='What the DAAM: Interpreting Stable Diffusion Using Cross Attention.',
     install_requires=[
       'transformers',
-      'diffusers',
+      'diffusers==0.3.0',
       'spacy',
       'gradio',
       'ftfy',
       'transformers',
-      'pandas'
+      'pandas',
+      'numba',
+      'nltk',
+      'inflect',
+      'joblib'
     ],
     packages=setuptools.find_packages(),
     python_requires='>=3.10'

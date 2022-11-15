@@ -1,19 +1,22 @@
 from collections import defaultdict
 from copy import deepcopy
-from typing import List, Type, Dict, Any, Literal
+from pathlib import Path
+from typing import List, Type, Any, Literal, Dict
 import math
 
 from diffusers import UNet2DConditionModel, StableDiffusionPipeline
 from diffusers.models.attention import CrossAttention
+import numba
 import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .experiment import COCO80_LABELS
 from .hook import ObjectHooker, AggregateHooker, UNetCrossAttentionLocator
 from .utils import compute_token_merge_indices
 
 
-__all__ = ['trace', 'DiffusionHeatMapHooker', 'HeatMap']
+__all__ = ['trace', 'DiffusionHeatMapHooker', 'HeatMap', 'MmDetectHeatMap']
 
 
 class UNetForwardHooker(ObjectHooker[UNet2DConditionModel]):
@@ -47,8 +50,44 @@ class HeatMap:
         return self.heat_maps[merge_idxs].mean(0)
 
 
+class MmDetectHeatMap:
+    def __init__(self, pred_file: str | Path, threshold: float = 0.95):
+        @numba.njit
+        def _compute_mask(masks: np.ndarray, bboxes: np.ndarray):
+            x_any = np.any(masks, axis=1)
+            y_any = np.any(masks, axis=2)
+            num_masks = len(bboxes)
+
+            for idx in range(num_masks):
+                x = np.where(x_any[idx, :])[0]
+                y = np.where(y_any[idx, :])[0]
+                bboxes[idx, :4] = np.array([x[0], y[0], x[-1] + 1, y[-1] + 1], dtype=np.float32)
+
+        pred_file = Path(pred_file)
+        self.word_masks: Dict[str, torch.Tensor] = defaultdict(lambda: 0)
+        bbox_result, masks = torch.load(pred_file)
+        labels = [np.full(bbox.shape[0], i, dtype=np.int32) for i, bbox in enumerate(bbox_result)]
+        labels = np.concatenate(labels)
+        bboxes = np.vstack(bbox_result)
+
+        if masks is not None and bboxes[:, :4].sum() == 0:
+            _compute_mask(masks, bboxes)
+            scores = bboxes[:, -1]
+            inds = scores > threshold
+            labels = labels[inds]
+            masks = masks[inds, ...]
+
+            for lbl, mask in zip(labels, masks):
+                self.word_masks[COCO80_LABELS[lbl]] |= torch.from_numpy(mask)
+
+            self.word_masks = {k: v.float() for k, v in self.word_masks.items()}
+
+    def compute_word_heat_map(self, word: str) -> torch.Tensor:
+        return self.word_masks[word]
+
+
 class DiffusionHeatMapHooker(AggregateHooker):
-    def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = True):
+    def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = False):
         heat_maps = defaultdict(list)
         modules = [UNetCrossAttentionHooker(x, heat_maps, weighted=weighted) for x in UNetCrossAttentionLocator().locate(pipeline.unet)]
         self.forward_hook = UNetForwardHooker(pipeline.unet, heat_maps)
@@ -98,7 +137,7 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
 
 class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
-    def __init__(self, module: CrossAttention, heat_maps: defaultdict, context_size: int = 77, weighted: bool = True):
+    def __init__(self, module: CrossAttention, heat_maps: defaultdict, context_size: int = 77, weighted: bool = False):
         super().__init__(module)
         self.heat_maps = heat_maps
         self.context_size = context_size

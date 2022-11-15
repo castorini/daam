@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 import random
 
 import PIL.Image
@@ -27,12 +28,20 @@ def expand_image(im: torch.Tensor, out: int = 512, absolute: bool = False, thres
     return im.squeeze()
 
 
-def plot_overlay_heat_map(im: PIL.Image.Image | np.ndarray, heat_map: torch.Tensor):
+def plot_overlay_heat_map(im: PIL.Image.Image | np.ndarray, heat_map: torch.Tensor, word: str = None, out_file: Path = None):
+    plt.clf()
+    plt.rcParams.update({'font.size': 24})
     plt.imshow(heat_map.squeeze().cpu().numpy(), cmap='jet')
     im = np.array(im)
     im = torch.from_numpy(im).float() / 255
     im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
     plt.imshow(im)
+
+    if word is not None:
+        plt.title(word)
+
+    if out_file is not None:
+        plt.savefig(out_file)
 
 
 def plot_mask_heat_map(im: PIL.Image.Image, heat_map: torch.Tensor, threshold: float = 0.4):
@@ -75,7 +84,6 @@ def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int
 
         if word_idx is None:
             raise ValueError(f'Couldn\'t find "{word}" in "{prompt}"')
-
 
     for idx, token in enumerate(tokens):
         merge_idxs.append(idx)
