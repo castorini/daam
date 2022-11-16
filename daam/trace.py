@@ -102,6 +102,17 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
     def compute_global_heat_map(self, prompt, time_weights=None, time_idx=None, last_n=None, factors=None):
         # type: (str, List[float], int, int, List[float]) -> HeatMap
+        """
+        Compute the global heat map for the given prompt, aggregating across time (inference steps) and space (different
+        spatial transformer block heat maps).
+
+        Args:
+            prompt: The prompt to compute the heat map for.
+            time_weights: The weights to apply to each time step. If None, all time steps are weighted equally.
+            time_idx: The time step to compute the heat map for. If None, the heat map is computed for all time steps.
+            last_n: The number of time steps (last n) to use. If None, the heat map is computed for all time steps.
+            factors: Restrict the application to heat maps with spatial factors in this set. If `None`, use all sizes.
+        """
         if time_weights is None:
             time_weights = [1.0] * len(self.forward_hook.all_heat_maps)
 
@@ -121,12 +132,14 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
         all_merges = []
 
-        for heat_map_map in heat_maps:
+        for factors_to_heat_maps in heat_maps:
             merge_list = []
 
-            for k, v in heat_map_map.items():
+            for k, heat_map in factors_to_heat_maps.items():
+                # heat_map shape: (tokens, 1, height, width)
+                # each v is a heat map tensor for a layer of factor size k across the tokens
                 if k in factors:
-                    merge_list.append(torch.stack(v, 0).mean(0))
+                    merge_list.append(torch.stack(heat_map, 0).mean(0))
 
             all_merges.append(merge_list)
 
@@ -146,6 +159,19 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
     @torch.no_grad()
     def _up_sample_attn(self, x, value, factor, method='bicubic'):
         # type: (torch.Tensor, torch.Tensor, int, Literal['bicubic', 'conv']) -> torch.Tensor
+        # x shape: (heads, height * width, tokens)
+        """
+        Up samples the attention map in x using interpolation to the maximum size of (64, 64), as assumed in the Stable
+        Diffusion model.
+
+        Args:
+            x (`torch.Tensor`): cross attention slice/map between the words and the tokens.
+            value (`torch.Tensor`): the value tensor.
+            method (`str`): the method to use; one of `'bicubic'` or `'conv'`.
+
+        Returns:
+            `torch.Tensor`: the up-sampled attention map of shape (tokens, 1, height, width).
+        """
         weight = torch.full((factor, factor), 1 / factor ** 2, device=x.device)
         weight = weight.view(1, 1, factor, factor)
 
@@ -153,7 +179,7 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
         maps = []
         x = x.permute(2, 0, 1)
         value = value.permute(1, 0, 2)
-        weights = value.norm(p=1, dim=-1, keepdim=True).unsqueeze(-1)
+        weights = 1
 
         with torch.cuda.amp.autocast(dtype=torch.float32):
             for map_ in x:
@@ -165,14 +191,25 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
                 else:
                     maps.append(F.conv_transpose2d(map_, weight, stride=factor).squeeze(1))
 
-        if not self.weighted:
-            weights = 1
+        if self.weighted:
+            weights = value.norm(p=1, dim=-1, keepdim=True).unsqueeze(-1)
 
-        maps = torch.stack(maps, 0)
+        maps = torch.stack(maps, 0)  # shape: (tokens, heads, height, width)
 
         return (weights * maps).sum(1, keepdim=True).cpu()
 
     def _hooked_attention(hk_self, self, query, key, value, sequence_length, dim, use_context: bool = True):
+        """
+        Monkey-patched version of :py:func:`.CrossAttention._attention` to capture attentions and aggregate them.
+
+        Args:
+            hk_self (`UNetCrossAttentionHooker`): pointer to the hook itself.
+            self (`CrossAttention`): pointer to the module.
+            query (`torch.Tensor`): the query tensor.
+            key (`torch.Tensor`): the key tensor.
+            value (`torch.Tensor`): the value tensor.
+            use_context (`bool`): whether to check if the resulting attention slices are between the words and the image
+        """
         batch_size_attention = query.shape[0]
         hidden_states = torch.zeros(
             (batch_size_attention, sequence_length, dim // self.heads), device=query.device, dtype=query.dtype
@@ -189,11 +226,10 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
             hid_states = torch.einsum("b i j, b j d -> b i d", attn_slice, value[start_idx:end_idx])
 
             if use_context and attn_slice.shape[-1] == hk_self.context_size:
-                if factor >= 1:
+                if factor >= 1: # shape: (batch_size, 64 // factor, 64 // factor, 77)
                     factor //= 1
                     maps = hk_self._up_sample_attn(attn_slice, value, factor)
                     hk_self.heat_maps[factor].append(maps)
-                # print(attn_slice.size(), query.size(), key.size(), value.size())
 
             hidden_states[start_idx:end_idx] = hid_states
 
