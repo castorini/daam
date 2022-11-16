@@ -84,6 +84,15 @@ class AggregateHooker(ObjectHooker[ModuleListType]):
 
 class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
     def locate(self, model: UNet2DConditionModel) -> List[CrossAttention]:
+        """
+        Locate all cross-attention modules in a UNet2DConditionModel.
+
+        Args:
+            model (`UNet2DConditionModel`): The model to locate the cross-attention modules in.
+
+        Returns:
+            `List[CrossAttention]`: The list of cross-attention modules.
+        """
         attentions = []
 
         for block in itertools.chain(model.up_blocks, model.down_blocks, [model.mid_block]):
@@ -91,5 +100,6 @@ class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
                 for attn in block.attentions:
                     for tblock in attn.transformer_blocks:
                         attentions.append(tblock.attn2)
+                        return attentions
 
         return attentions

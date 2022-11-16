@@ -8,6 +8,7 @@ I regularly update this codebase. Please submit an issue if you have any questio
 
 In [our paper](https://arxiv.org/abs/2210.04885), we propose diffusion attentive attribution maps (DAAM), a cross attention-based approach for interpreting Stable Diffusion.
 Check out our demo: https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps.
+Our [documentation]() is hosted by GitHub pages.
 
 ## Using DAAM
 
@@ -43,7 +44,7 @@ with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
         plt.show()
 ```
 
-We'll have docs soon.
+We'll continue adding docs.
 In the meantime, check out the `GenerationExperiment`, `HeatMap`, and `DiffusionHeatMapHooker` classes, as well as the `daam/run/*.py` example scripts.
 
 ## Running the Demo
