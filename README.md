@@ -8,7 +8,7 @@ I regularly update this codebase. Please submit an issue if you have any questio
 
 In [our paper](https://arxiv.org/abs/2210.04885), we propose diffusion attentive attribution maps (DAAM), a cross attention-based approach for interpreting Stable Diffusion.
 Check out our demo: https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps.
-Our [documentation]() is hosted by GitHub pages.
+Our [documentation](https://castorini.github.io/daam/) is hosted by GitHub pages.
 
 ## Using DAAM
 
