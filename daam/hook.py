@@ -100,6 +100,5 @@ class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
                 for attn in block.attentions:
                     for tblock in attn.transformer_blocks:
                         attentions.append(tblock.attn2)
-                        return attentions
 
         return attentions
