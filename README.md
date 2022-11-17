@@ -10,6 +10,8 @@ In [our paper](https://arxiv.org/abs/2210.04885), we propose diffusion attentive
 Check out our demo: https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps.
 Our [documentation](https://castorini.github.io/daam/) is hosted by GitHub pages.
 
+Welcome 🇯🇵!
+
 ## Using DAAM
 
 First, install [PyTorch](https://pytorch.org) for your platform.
