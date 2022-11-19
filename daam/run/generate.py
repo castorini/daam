@@ -45,8 +45,11 @@ def build_word_list_large() -> Dict[str, List[str]]:
 
 
 def main():
+    actions = ['prompt', 'coco', 'template', 'cconj', 'coco-unreal']
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--action', type=str, default='prompt', choices=['prompt', 'coco', 'template', 'cconj', 'coco-unreal'])
+    parser.add_argument('--action', type=str, default='prompt', choices=actions)
+    parser.add_argument('--study', '-st', type=str, default='normal', choices=['normal', 'time-ablation', 'space-ablation'])
     parser.add_argument('--output-folder', '-o', type=str, default='output')
     parser.add_argument('--input-folder', '-i', type=str, default='input')
     parser.add_argument('--seed', '-s', type=int, default=0)
@@ -56,6 +59,7 @@ def main():
     parser.add_argument('--template-data-file', '-tdf', type=str, default='template.tsv')
     parser.add_argument('--regenerate', action='store_true')
     parser.add_argument('--seed-offset', type=int, default=0)
+    parser.add_argument('--num-timesteps', type=int, default=30)
     args = parser.parse_args()
 
     gen = set_seed(args.seed)
@@ -143,6 +147,16 @@ def main():
     else:
         prompts = [('prompt', input('> '))]
 
+    if args.study == 'time-ablation':
+        time_indices = [1, 2, 3, 5, 8, 13, 21, args.num_timesteps, -1, -2, -3, -5, -8, -13, -21]
+    else:
+        time_indices = [args.num_timesteps]
+
+    if args.study == 'space-ablation':
+        space_factors = [[1], [1, 2], [1, 2, 4], [1, 2, 4, 8], [2, 4, 8], [4, 8], [8]]
+    else:
+        space_factors = []
+
     model_id = 'CompVis/stable-diffusion-v1-4'
     device = 'cuda'
 
@@ -159,28 +173,45 @@ def main():
                 gen = set_seed(seed)
 
             prompt_id = str(prompt_id)
-            do_skip = False
-            num_steps = 30
 
             if args.regenerate and not GenerationExperiment.contains_truth_mask(args.output_folder, prompt_id):
-                # I screwed up with the seed generation so this is a hacky workaround to reproduce the paper.
-                num_steps = 1
-                do_skip = True
-                print(f'Skipping {prompt_id}')
+                # I screwed up with the seed generation so this is a hacky workaround to reproduce the paper. Basically,
+                # we push the state of the generator forward from the same random sampling operation.
+                latents_shape = (1, pipe.unet.in_channels, 512 // 8, 512 // 8)
+                torch.randn(latents_shape, generator=gen, device='cuda')
+                continue
             elif args.regenerate:
                 print(f'Regenerating {prompt_id}')
 
             with trace(pipe, weighted=False) as tc:
-                out = pipe(prompt, num_inference_steps=num_steps, generator=gen)
-                exp = GenerationExperiment(
-                    id=prompt_id,
-                    global_heat_map=tc.compute_global_heat_map(prompt).heat_maps,
-                    seed=seed,
-                    prompt=prompt,
-                    image=out.images[0]
-                )
+                out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen)
 
-                if not do_skip:
+                for factors in space_factors:
+                    map_kwargs = dict(factors=factors)
+
+                    exp = GenerationExperiment(
+                        id=prompt_id,
+                        global_heat_map=tc.compute_global_heat_map(prompt, **map_kwargs).heat_maps,
+                        seed=seed,
+                        prompt=prompt,
+                        image=out.images[0],
+                        subtype=f'space{"-".join(map(str, factors))}'
+                    )
+
+                    exp.save(args.output_folder)
+
+                for time_idx in time_indices:
+                    map_kwargs = dict(first_n=time_idx) if time_idx > 0 else dict(last_n=-time_idx)
+
+                    exp = GenerationExperiment(
+                        id=prompt_id,
+                        global_heat_map=tc.compute_global_heat_map(prompt, **map_kwargs).heat_maps,
+                        seed=seed,
+                        prompt=prompt,
+                        image=out.images[0],
+                        subtype=f'time{time_idx}' if time_idx != args.num_timesteps else '.'
+                    )
+
                     exp.save(args.output_folder)
 
 

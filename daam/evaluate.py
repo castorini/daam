@@ -93,11 +93,15 @@ class MeanEvaluator:
     def mean_intensity(self) -> float:
         return np.mean(self.intensities)
 
+    @property
+    def ci95_miou(self) -> float:
+        return 1.96 * np.std(self.ious) / np.sqrt(len(self.ious))
+
     def __len__(self) -> int:
         return max(len(self.ious), len(self.intensities))
 
     def __str__(self):
-        return f'{self.name}<{self.mean_iou:.4f} (mIoU) {self.mean_intensity:.4f} (mInt) {len(self)} samples>'
+        return f'{self.name}<{self.mean_iou:.4f} (±{self.ci95_miou:.3f} mIoU) {self.mean_intensity:.4f} (mInt) {len(self)} samples>'
 
 
 if __name__ == '__main__':

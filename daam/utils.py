@@ -28,11 +28,17 @@ def expand_image(im: torch.Tensor, out: int = 512, absolute: bool = False, thres
     return im.squeeze()
 
 
-def plot_overlay_heat_map(im: PIL.Image.Image | np.ndarray, heat_map: torch.Tensor, word: str = None, out_file: Path = None):
+def plot_overlay_heat_map(im, heat_map, word=None, out_file=None, crop=None):
+    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int) -> None
     plt.clf()
     plt.rcParams.update({'font.size': 24})
-    plt.imshow(heat_map.squeeze().cpu().numpy(), cmap='jet')
+
     im = np.array(im)
+    if crop is not None:
+        heat_map = heat_map.squeeze()[crop:-crop, crop:-crop]
+        im = im[crop:-crop, crop:-crop]
+
+    plt.imshow(heat_map.squeeze().cpu().numpy(), cmap='jet')
     im = torch.from_numpy(im).float() / 255
     im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
     plt.imshow(im)

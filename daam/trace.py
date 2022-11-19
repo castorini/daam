@@ -100,8 +100,8 @@ class DiffusionHeatMapHooker(AggregateHooker):
     def all_heat_maps(self):
         return self.forward_hook.all_heat_maps
 
-    def compute_global_heat_map(self, prompt, time_weights=None, time_idx=None, last_n=None, factors=None):
-        # type: (str, List[float], int, int, List[float]) -> HeatMap
+    def compute_global_heat_map(self, prompt, time_weights=None, time_idx=None, last_n=None, first_n=None, factors=None):
+        # type: (str, List[float], int, int, int, List[float]) -> HeatMap
         """
         Compute the global heat map for the given prompt, aggregating across time (inference steps) and space (different
         spatial transformer block heat maps).
@@ -110,7 +110,11 @@ class DiffusionHeatMapHooker(AggregateHooker):
             prompt: The prompt to compute the heat map for.
             time_weights: The weights to apply to each time step. If None, all time steps are weighted equally.
             time_idx: The time step to compute the heat map for. If None, the heat map is computed for all time steps.
-            last_n: The number of time steps (last n) to use. If None, the heat map is computed for all time steps.
+                Mutually exclusive with `last_n` and `first_n`.
+            last_n: The number of last n time steps to use. If None, the heat map is computed for all time steps.
+                Mutually exclusive with `time_idx`.
+            first_n: The number of first n time steps to use. If None, the heat map is computed for all time steps.
+                Mutually exclusive with `time_idx`.
             factors: Restrict the application to heat maps with spatial factors in this set. If `None`, use all sizes.
         """
         if time_weights is None:
@@ -124,6 +128,7 @@ class DiffusionHeatMapHooker(AggregateHooker):
             heat_maps = [all_heat_maps[time_idx]]
         else:
             heat_maps = all_heat_maps[-last_n:] if last_n is not None else all_heat_maps
+            heat_maps = heat_maps[:first_n] if first_n is not None else heat_maps
 
         if factors is None:
             factors = {1, 2, 4, 8, 16, 32}

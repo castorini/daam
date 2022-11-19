@@ -2,19 +2,11 @@ from collections import defaultdict
 from pathlib import Path
 import argparse
 
-from sklearn.model_selection import KFold, cross_val_score
-from transformers import AutoTokenizer
-from skimage.filters import threshold_otsu
-from skimage.segmentation import clear_border
-from skimage.measure import label, regionprops
-from sklearn.linear_model import LogisticRegression
-from skimage.morphology import closing, square
-from skimage.color import label2rgb
 from matplotlib import pyplot as plt
+from skimage.measure import label, regionprops
 from transformers import AutoTokenizer
 import numpy as np
 import scipy.stats
-import torch
 
 from daam import GenerationExperiment, HeatMap, plot_overlay_heat_map, expand_image
 
@@ -65,10 +57,11 @@ def main():
         else:
             Xs[2].append(num_objects)
             ys[2].append(intensity)
+            continue
 
-        # plt.clf()
-        # plot_overlay_heat_map(np.array(exp.image)[b:-b, b:-b], heat_map2)
-        # plt.show()
+        plt.clf()
+        plot_overlay_heat_map(np.array(exp.image)[b:-b, b:-b], heat_map2)
+        plt.show()
 
         # Nouns
         b = 1
@@ -85,20 +78,6 @@ def main():
             num_trues.append(num_objects)
             num_preds.append(num_objects_pred)
             num_prompts.append(prompt_num_objects)
-
-        # Append features
-        # feats[0].append(num_regions1)
-        # feats[1].append(intensity)
-        # feats[2].append(num_regions2)
-        # feats[3].append(torch.from_numpy(heat_map2).float().div(255).mean().item())
-        # feats[4].append(expand_image(heat_map.compute_word_heat_map(exp.prompt.split()[0]), absolute=False, threshold=0.5).mean().item())
-        # y.append(int(num_objects == prompt_num_objects))
-
-    # X = np.array(list(feats.values())).T
-    # cv = KFold(n_splits=10, random_state=1, shuffle=True)
-    # lr = LogisticRegression()
-    # scores = cross_val_score(lr, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
-    # print(np.mean(scores))
 
     num_trues = np.array(num_trues)
     num_preds = np.array(num_preds)

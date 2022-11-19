@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 import json
 
-from transformers import PreTrainedTokenizer
+from transformers import PreTrainedTokenizer, AutoTokenizer
 import PIL.Image
 import numpy as np
 import torch
@@ -111,9 +111,14 @@ class GenerationExperiment:
     truth_masks: Optional[Dict[str, torch.Tensor]] = None
     prediction_masks: Optional[Dict[str, torch.Tensor]] = None
     annotations: Optional[Dict[str, Any]] = None
+    subtype: Optional[str] = '.'
 
     def nsfw(self) -> bool:
         return np.sum(np.array(self.image)) == 0
+
+    def heat_map(self, tokenizer: AutoTokenizer):
+        from daam import HeatMap
+        return HeatMap(tokenizer, self.prompt, self.global_heat_map)
 
     def save(self, path: str = None):
         if path is None:
@@ -121,9 +126,9 @@ class GenerationExperiment:
         else:
             path = Path(path) / self.id
 
-        path.mkdir(parents=True, exist_ok=True)
-        torch.save(self, path / 'generation.pt')
-        self.image.save(path / 'output.png')
+        (path / self.subtype).mkdir(parents=True, exist_ok=True)
+        torch.save(self, path / self.subtype / 'generation.pt')
+        self.image.save(path / self.subtype / 'output.png')
 
         with (path / 'prompt.txt').open('w') as f:
             f.write(self.prompt)
@@ -164,14 +169,17 @@ class GenerationExperiment:
             vocab = UNUSED_LABELS
 
         if composite:
-            im = PIL.Image.open(self.path / f'composite.{pred_prefix}.pred.png')
-            im = np.array(im)
+            try:
+                im = PIL.Image.open(self.path / self.subtype / f'composite.{pred_prefix}.pred.png')
+                im = np.array(im)
 
-            for mask_idx in np.unique(im):
-                mask = torch.from_numpy((im == mask_idx).astype(np.float32))
-                _add_mask(masks, vocab[mask_idx], mask, simplify80)
+                for mask_idx in np.unique(im):
+                    mask = torch.from_numpy((im == mask_idx).astype(np.float32))
+                    _add_mask(masks, vocab[mask_idx], mask, simplify80)
+            except FileNotFoundError:
+                pass
         else:
-            for mask_path in self.path.glob(f'*.{pred_prefix}.pred.png'):
+            for mask_path in (self.path / self.subtype).glob(f'*.{pred_prefix}.pred.png'):
                 mask = load_mask(str(mask_path))
                 word = mask_path.name.split(f'.{pred_prefix}.pred')[0].lower()
                 _add_mask(masks, word, mask, simplify80)
@@ -180,6 +188,7 @@ class GenerationExperiment:
 
     def clear_prediction_masks(self, name: str):
         path = self if isinstance(self, Path) else self.path
+        path = path / self.subtype
 
         for mask_path in path.glob(f'*.{name}.pred.png'):
             mask_path.unlink()
@@ -187,13 +196,28 @@ class GenerationExperiment:
     def save_prediction_mask(self, mask: torch.Tensor, word: str, name: str):
         path = self if isinstance(self, Path) else self.path
         im = PIL.Image.fromarray((mask * 255).unsqueeze(-1).expand(-1, -1, 4).cpu().byte().numpy())
-        im.save(path / f'{word.lower()}.{name}.pred.png')
+        im.save(path / self.subtype / f'{word.lower()}.{name}.pred.png')
 
-    def save_heat_map(self, tokenizer: PreTrainedTokenizer, word: str):
+    def save_heat_map(self, tokenizer: PreTrainedTokenizer, word: str, crop: int = None) -> Path:
         from .trace import HeatMap  # because of cyclical import
         heat_map = HeatMap(tokenizer, self.prompt, self.global_heat_map)
         heat_map = expand_image(heat_map.compute_word_heat_map(word))
-        plot_overlay_heat_map(self.image, heat_map, word, self.path / f'{word.lower()}.heat_map.png')
+        path = self.path / self.subtype / f'{word.lower()}.heat_map.png'
+        plot_overlay_heat_map(self.image, heat_map, word, path, crop=crop)
+
+        return path
+
+    def save_all_heat_maps(self, tokenizer: PreTrainedTokenizer, crop: int = None) -> Dict[str, Path]:
+        path_map = {}
+
+        for word in self.prompt.split(' '):
+            try:
+                path = self.save_heat_map(tokenizer, word, crop=crop)
+                path_map[word] = path
+            except:
+                pass
+
+        return path_map
 
     @staticmethod
     def contains_truth_mask(path: str | Path, prompt_id: str = None) -> bool:
@@ -240,10 +264,41 @@ class GenerationExperiment:
         return self
 
     @classmethod
-    def load(cls, path, pred_prefix='daam', composite=False, simplify80=False, vocab=None):
-        # type: (str, str, bool, bool, List[str] | None) -> GenerationExperiment
+    def load(
+            cls,
+            path,
+            pred_prefix='daam',
+            composite=False,
+            simplify80=False,
+            vocab=None,
+            subtype='.',
+            all_subtypes=False
+    ):
+        # type: (str, str, bool, bool, List[str] | None, str, bool) -> GenerationExperiment | List[GenerationExperiment]
+        if all_subtypes:
+            experiments = []
+
+            for directory in Path(path).iterdir():
+                if not directory.is_dir():
+                    continue
+
+                try:
+                    experiments.append(cls.load(
+                        path,
+                        pred_prefix=pred_prefix,
+                        composite=composite,
+                        simplify80=simplify80,
+                        vocab=vocab,
+                        subtype=directory.name
+                    ))
+                except:
+                    pass
+
+            return experiments
+
         path = Path(path)
-        exp = torch.load(path / 'generation.pt')
+        exp = torch.load(path / subtype / 'generation.pt')
+        exp.subtype = subtype
         exp.path = path
         exp.truth_masks = exp._load_truth_masks(simplify80=simplify80)
         exp.prediction_masks = exp._load_pred_masks(pred_prefix, composite=composite, simplify80=simplify80, vocab=vocab)

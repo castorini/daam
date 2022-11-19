@@ -14,6 +14,7 @@ def main():
     parser.add_argument('--mask-type', '-m', type=str, default='word', choices=['word', 'composite'])
     parser.add_argument('--eval-type', '-e', type=str, default='labeled', choices=['labeled', 'unlabeled', 'hungarian'])
     parser.add_argument('--restrict-set', '-r', type=str, default='none', choices=['none', 'coco27', 'coco80'])
+    parser.add_argument('--subtype', '-st', type=str, default='.')
     args = parser.parse_args()
 
     evaluator = MeanEvaluator() if args.eval_type != 'hungarian' else UnsupervisedEvaluator()
@@ -53,7 +54,8 @@ def main():
             args.pred_prefix,
             composite=args.mask_type == 'composite',
             simplify80=simplify80,
-            vocab=vocab
+            vocab=vocab,
+            subtype=args.subtype
         )
 
         if args.eval_type == 'labeled':
