@@ -87,7 +87,7 @@ class MmDetectHeatMap:
 
 
 class DiffusionHeatMapHooker(AggregateHooker):
-    def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = False, layer_idx: int=None, head_idx: int=None):
+    def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = False, layer_idx: int = None, head_idx: int = None):
         heat_maps = defaultdict(list)
         modules = [UNetCrossAttentionHooker(x, heat_maps, weighted=weighted, head_idx=head_idx) for x in UNetCrossAttentionLocator().locate(pipeline.unet, layer_idx)]
         self.forward_hook = UNetForwardHooker(pipeline.unet, heat_maps)
@@ -201,6 +201,7 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
             weights = value.norm(p=1, dim=-1, keepdim=True).unsqueeze(-1)
 
         maps = torch.stack(maps, 0)  # shape: (tokens, heads, height, width)
+        
         if self.head_idx:
             maps = maps[:, self.head_idx:self.head_idx+1, :, :]
 
