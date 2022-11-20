@@ -87,9 +87,9 @@ class MmDetectHeatMap:
 
 
 class DiffusionHeatMapHooker(AggregateHooker):
-    def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = False):
+    def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = False, layer_idx: int=None, head_idx: int=None):
         heat_maps = defaultdict(list)
-        modules = [UNetCrossAttentionHooker(x, heat_maps, weighted=weighted) for x in UNetCrossAttentionLocator().locate(pipeline.unet)]
+        modules = [UNetCrossAttentionHooker(x, heat_maps, weighted=weighted, head_idx=head_idx) for x in UNetCrossAttentionLocator().locate(pipeline.unet, layer_idx)]
         self.forward_hook = UNetForwardHooker(pipeline.unet, heat_maps)
         modules.append(self.forward_hook)
         super().__init__(modules)
@@ -155,11 +155,12 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
 
 class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
-    def __init__(self, module: CrossAttention, heat_maps: defaultdict, context_size: int = 77, weighted: bool = False):
+    def __init__(self, module: CrossAttention, heat_maps: defaultdict, context_size: int = 77, weighted: bool = False, head_idx: int = 0):
         super().__init__(module)
         self.heat_maps = heat_maps
         self.context_size = context_size
         self.weighted = weighted
+        self.head_idx = head_idx
 
     @torch.no_grad()
     def _up_sample_attn(self, x, value, factor, method='bicubic'):
@@ -200,6 +201,8 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
             weights = value.norm(p=1, dim=-1, keepdim=True).unsqueeze(-1)
 
         maps = torch.stack(maps, 0)  # shape: (tokens, heads, height, width)
+        if self.head_idx:
+            maps = maps[:, self.head_idx:self.head_idx+1, :, :]
 
         return (weights * maps).sum(1, keepdim=True).cpu()
 
