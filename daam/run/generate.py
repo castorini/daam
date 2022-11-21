@@ -180,15 +180,20 @@ def main():
                     global_heat_map=tc.compute_global_heat_map(prompt).heat_maps,
                     seed=seed,
                     prompt=prompt,
-                    image=out.images[0]
+                    image=out.images[0],
+                    path=Path(args.output_folder)
                 )
                 exp.save(args.output_folder)
+                exp.save_all_heat_maps(pipe.tokenizer)
 
                 # Generate 4 * 4 * (num words) heat maps. That's one for each of the first 4 heads of each of the
                 # first 4 layers.
                 for word in prompt.split():
-                    for head_idx in range(4):
-                        for layer_idx in range(4):
+                    if not word.startswith('dog'):
+                        continue
+
+                    for head_idx in range(16):
+                        for layer_idx in range(7):
                             heat_map = tc.compute_global_heat_map(prompt, head_idx=head_idx, layer_idx=layer_idx)
                             exp = GenerationExperiment(
                                 path=Path(args.output_folder),

@@ -84,9 +84,6 @@ class AggregateHooker(ObjectHooker[ModuleListType]):
 
 class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
     def __init__(self, restrict: bool = None):
-        if restrict is None:
-            restrict = set()
-
         self.restrict = restrict
 
     def locate(self, model: UNet2DConditionModel) -> List[CrossAttention]:
@@ -109,7 +106,7 @@ class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
                     for transformer_block in spatial_transformer.transformer_blocks:
                         blocks.append(transformer_block.attn2)
 
-                blocks = [b for idx, b in enumerate(blocks) if idx not in self.restrict]
+                blocks = [b for idx, b in enumerate(blocks) if self.restrict is None or idx in self.restrict]
                 blocks_list.extend(blocks)
 
         return blocks_list

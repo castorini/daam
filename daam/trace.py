@@ -38,7 +38,19 @@ class RawHeatMapCollection:
         self.ids_to_num_maps: Dict[RawHeatMapKey, int] = defaultdict(lambda: 0)
 
     def update(self, factor: int, layer_idx: int, head_idx: int, heatmap: torch.Tensor):
-        self.ids_to_heatmaps[(factor, layer_idx, head_idx)] += heatmap
+        # from .utils import expand_image
+        # from matplotlib import pyplot as plt
+        # if layer_idx == 2 and head_idx == 0:
+        #     print(factor, layer_idx, head_idx)
+        #     hm = expand_image(heatmap[2])
+        #     plt.imshow(hm)
+        #     plt.show()
+        #
+        #     print(factor, layer_idx, head_idx)
+        #     hm = expand_image(heatmap[1])
+        #     plt.imshow(hm)
+        #     plt.show()
+        self.ids_to_heatmaps[(factor, layer_idx, head_idx)] = self.ids_to_heatmaps[(factor, layer_idx, head_idx)] + heatmap
 
     def factors(self) -> Set[int]:
         return set(key[0] for key in self.ids_to_heatmaps.keys())
@@ -125,14 +137,13 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
         all_merges = []
 
-        for ((factor, layer, head), heat_map) in heat_maps:
+        for (factor, layer, head), heat_map in heat_maps:
             if factor in factors and (head_idx is None or head_idx == head) and (layer_idx is None or layer_idx == layer):
                 heat_map = heat_map.unsqueeze(1)
                 all_merges.append(F.interpolate(heat_map, size=(64, 64), mode='bicubic'))
 
         maps = torch.stack(all_merges, dim=0)
-        print(maps.shape)
-        maps = maps.sum(0)[:, 0]
+        maps = maps.mean(0)[:, 0]
 
         return HeatMap(self.pipe.tokenizer, prompt, maps)
 
@@ -159,8 +170,16 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
             `List[Tuple[int, torch.Tensor]]`: the list of heat maps across heads.
         """
         h = w = int(math.sqrt(x.size(1)))
-        x = x.permute(0, 2, 1).contiguous()
-        return x.view(x.size(0), -1, h, w)
+        maps = []
+        x = x.permute(2, 0, 1)
+
+        with torch.cuda.amp.autocast(dtype=torch.float32):
+            for map_ in x:
+                map_ = map_.view(map_.size(0), h, w)
+                maps.append(map_)
+
+        maps = torch.stack(maps, 0)  # shape: (tokens, heads, height, width)
+        return maps.permute(1, 0, 2, 3).contiguous()  # shape: (heads, tokens, height, width)
 
     def _hooked_attention(hk_self, self, query, key, value, sequence_length, dim, use_context: bool = True):
         """
