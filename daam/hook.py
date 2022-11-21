@@ -83,7 +83,13 @@ class AggregateHooker(ObjectHooker[ModuleListType]):
 
 
 class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
-    def locate(self, model: UNet2DConditionModel, layer_idx: int) -> List[CrossAttention]:
+    def __init__(self, restrict: bool = None):
+        if restrict is None:
+            restrict = set()
+
+        self.restrict = restrict
+
+    def locate(self, model: UNet2DConditionModel) -> List[CrossAttention]:
         """
         Locate all cross-attention modules in a UNet2DConditionModel.
 
@@ -93,18 +99,17 @@ class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
         Returns:
             `List[CrossAttention]`: The list of cross-attention modules.
         """
-        blocks = []
-        i = 0
+        blocks_list = []
 
         for unet_block in itertools.chain(model.up_blocks, model.down_blocks, [model.mid_block]):
             if 'CrossAttn' in unet_block.__class__.__name__:
-                if not layer_idx or i == layer_idx:
-                    for spatial_transformer in unet_block.attentions:
-                        for transformer_block in spatial_transformer.transformer_blocks:
-                            blocks.append(transformer_block.attn2)
-            i += 1
-        
-        if layer_idx:
-            blocks = [blocks[0]]
+                blocks = []
 
-        return blocks
+                for spatial_transformer in unet_block.attentions:
+                    for transformer_block in spatial_transformer.transformer_blocks:
+                        blocks.append(transformer_block.attn2)
+
+                blocks = [b for idx, b in enumerate(blocks) if idx not in self.restrict]
+                blocks_list.extend(blocks)
+
+        return blocks_list
