@@ -85,6 +85,7 @@ class AggregateHooker(ObjectHooker[ModuleListType]):
 class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
     def __init__(self, restrict: bool = None):
         self.restrict = restrict
+        self.layer_names = []
 
     def locate(self, model: UNet2DConditionModel) -> List[CrossAttention]:
         """
@@ -96,9 +97,16 @@ class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
         Returns:
             `List[CrossAttention]`: The list of cross-attention modules.
         """
+        self.layer_names.clear()
         blocks_list = []
+        up_names = ['up'] * len(model.up_blocks)
+        down_names = ['down'] * len(model.up_blocks)
 
-        for unet_block in itertools.chain(model.up_blocks, model.down_blocks, [model.mid_block]):
+        for unet_block, name in itertools.chain(
+                zip(model.up_blocks, up_names),
+                zip(model.down_blocks, down_names),
+                [(model.mid_block, 'mid')]
+        ):
             if 'CrossAttn' in unet_block.__class__.__name__:
                 blocks = []
 
@@ -107,6 +115,8 @@ class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
                         blocks.append(transformer_block.attn2)
 
                 blocks = [b for idx, b in enumerate(blocks) if self.restrict is None or idx in self.restrict]
+                names = [f'{name}-attn-{i}' for i in range(len(blocks)) if self.restrict is None or i in self.restrict]
                 blocks_list.extend(blocks)
+                self.layer_names.extend(names)
 
         return blocks_list

@@ -1,12 +1,13 @@
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List
 import argparse
 import json
+import random
+import time
 
 import pandas as pd
-import random
-
 from diffusers import StableDiffusionPipeline
 from nltk.corpus import wordnet as wn
 from tqdm import tqdm
@@ -60,10 +61,13 @@ def main():
     parser.add_argument('--seed-offset', type=int, default=0)
     parser.add_argument('--num-timesteps', type=int, default=30)
     parser.add_argument('--all-heads', action='store_true')
+    parser.add_argument('--word', type=str)
+    parser.add_argument('--random-seed', action='store_true')
     args = parser.parse_args()
 
     gen = set_seed(args.seed)
     eng = inflect.engine()
+    args.lemma = cached_nlp(args.word)[0].lemma_ if args.word else None
 
     if args.action.startswith('coco'):
         with (Path(args.input_folder) / 'captions_val2014.json').open() as f:
@@ -71,6 +75,8 @@ def main():
 
         random.shuffle(captions)
         captions = captions[:args.gen_limit]
+        new_captions = []
+
         if args.action == 'coco-unreal':
             pos_map = defaultdict(list)
 
@@ -81,6 +87,7 @@ def main():
                     if tok.pos_ == 'ADJ' or tok.pos_ == 'NOUN':
                         pos_map[tok.pos_].append(tok)
 
+
             for caption in tqdm(captions):
                 doc = cached_nlp(caption['caption'])
                 new_tokens = []
@@ -88,11 +95,34 @@ def main():
                 for tok in doc:
                     if tok.pos_ == 'ADJ' or tok.pos_ == 'NOUN':
                         new_tokens.append(random.choice(pos_map[tok.pos_]))
-
                 new_prompt = ''.join([tok.text_with_ws for tok in new_tokens])
                 caption['caption'] = new_prompt
 
                 print(new_prompt)
+
+            new_prompt = ''.join([tok.text_with_ws for tok in new_tokens])
+            caption['caption'] = new_prompt
+
+            print(new_prompt)
+            new_captions.append(caption)
+
+        if args.lemma is not None:
+            for caption in tqdm(captions):
+                if args.lemma not in caption['caption'].lower():
+                    continue
+
+                doc = cached_nlp(caption['caption'])
+                found = False
+
+                for tok in doc:
+                    if tok.lemma_.lower() == args.lemma:
+                        found = True
+                        break
+
+                if found:
+                    new_captions.append(caption)
+
+            captions = new_captions
 
         prompts = [(caption['id'], caption['caption']) for caption in captions]
     elif args.action == 'template':
@@ -156,6 +186,9 @@ def main():
 
     with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
         for prompt_id, prompt in tqdm(prompts):
+            if args.random_seed:
+                gen = set_seed(int(time.time()))
+
             # gen = set_seed(seed)  # Uncomment this for seed fix
 
             if args.action == 'template' or args.action == 'cconj':
@@ -184,27 +217,25 @@ def main():
                     path=Path(args.output_folder)
                 )
                 exp.save(args.output_folder)
-                exp.save_all_heat_maps(pipe.tokenizer)
 
-                # Generate 4 * 4 * (num words) heat maps. That's one for each of the first 4 heads of each of the
-                # first 4 layers.
                 for word in prompt.split():
-                    if not word.startswith('dog'):
+                    if args.lemma is not None and cached_nlp(word)[0].lemma_.lower() != args.lemma:
                         continue
 
-                    for head_idx in range(16):
-                        for layer_idx in range(7):
-                            heat_map = tc.compute_global_heat_map(prompt, head_idx=head_idx, layer_idx=layer_idx)
-                            exp = GenerationExperiment(
-                                path=Path(args.output_folder),
-                                id=prompt_id,
-                                global_heat_map=heat_map.heat_maps,
-                                seed=seed,
-                                prompt=prompt,
-                                image=out.images[0]
-                            )
+                    exp.save_heat_map(pipe.tokenizer, word)
 
-                            exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'h{head_idx}-l{layer_idx}-')
+                    for layer_idx, layer_name in enumerate(tc.layer_names):
+                        heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx)
+                        exp = GenerationExperiment(
+                            path=Path(args.output_folder),
+                            id=prompt_id,
+                            global_heat_map=heat_map.heat_maps,
+                            seed=seed,
+                            prompt=prompt,
+                            image=out.images[0]
+                        )
+
+                        exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'l{layer_idx}-{layer_name}-')
 
 
 if __name__ == '__main__':
