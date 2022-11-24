@@ -9,4 +9,3 @@ numba
 nltk
 inflect
 joblib
-git+https://github.com/Stability-AI/stablediffusion@33910c3
