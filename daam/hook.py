@@ -9,6 +9,8 @@ import torch.nn as nn
 
 __all__ = ['ObjectHooker', 'ModuleLocator', 'AggregateHooker', 'UNetCrossAttentionLocator']
 
+from daam.ldm.modules.attention import SpatialTransformer
+from daam.ldm.modules.diffusionmodules.openaimodel import UNetModel
 
 ModuleType = TypeVar('ModuleType')
 ModuleListType = TypeVar('ModuleListType', bound=List)
@@ -80,6 +82,35 @@ class AggregateHooker(ObjectHooker[ModuleListType]):
 
     def register_hook(self, hook: ObjectHooker):
         self.module.append(hook)
+
+
+class UNetV2CrossAttentionLocator(ModuleLocator[CrossAttention]):
+    """For Stable Diffusion v2. This probably requires a rewrite sometime later."""
+    def locate(self, model: UNetModel, layer_idx: int) -> List[CrossAttention]:
+        """
+        Locate all cross-attention modules in a UNet model.
+
+        Args:
+            model (`UNetModel`): The model to locate the cross-attention modules in.
+
+        Returns:
+            `List[CrossAttention]`: The list of cross-attention modules.
+        """
+        blocks = []
+        i = 0
+
+        for unet_block in itertools.chain(model.output_blocks, model.input_blocks, [model.middle_block]):
+            for layer in unet_block:
+                if isinstance(layer, SpatialTransformer):
+                    for transformer_block in layer.transformer_blocks:
+                        blocks.append(transformer_block.attn2)
+
+                i += 1
+
+        if layer_idx:
+            blocks = [blocks[0]]
+
+        return blocks
 
 
 class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):

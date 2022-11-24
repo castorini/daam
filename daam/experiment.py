@@ -113,6 +113,10 @@ class GenerationExperiment:
     annotations: Optional[Dict[str, Any]] = None
     subtype: Optional[str] = '.'
 
+    def __post_init__(self):
+        self.path = None if self.path is None else self.path / self.id
+        self.image = self.image.resize((512, 512))
+
     def nsfw(self) -> bool:
         return np.sum(np.array(self.image)) == 0
 

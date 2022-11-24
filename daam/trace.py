@@ -12,7 +12,8 @@ import torch
 import torch.nn.functional as F
 
 from .experiment import COCO80_LABELS
-from .hook import ObjectHooker, AggregateHooker, UNetCrossAttentionLocator
+from .hook import ObjectHooker, AggregateHooker, UNetCrossAttentionLocator, UNetV2CrossAttentionLocator
+from .pipeline_stable_diffusion_v2 import StableDiffusionV2Pipeline
 from .utils import compute_token_merge_indices
 
 
@@ -87,9 +88,15 @@ class MmDetectHeatMap:
 
 
 class DiffusionHeatMapHooker(AggregateHooker):
-    def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = False, layer_idx: int = None, head_idx: int = None):
+    def __init__(self, pipeline: StableDiffusionPipeline | StableDiffusionV2Pipeline, weighted: bool = False, layer_idx: int = None, head_idx: int = None):
         heat_maps = defaultdict(list)
-        modules = [UNetCrossAttentionHooker(x, heat_maps, weighted=weighted, head_idx=head_idx) for x in UNetCrossAttentionLocator().locate(pipeline.unet, layer_idx)]
+
+        if isinstance(pipeline, StableDiffusionV2Pipeline):
+            locator = UNetV2CrossAttentionLocator()
+        else:
+            locator = UNetCrossAttentionLocator()
+
+        modules = [UNetCrossAttentionHooker(x, heat_maps, weighted=weighted, head_idx=head_idx) for x in locator.locate(pipeline.unet, layer_idx)]
         self.forward_hook = UNetForwardHooker(pipeline.unet, heat_maps)
         modules.append(self.forward_hook)
         super().__init__(modules)

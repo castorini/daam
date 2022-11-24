@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Dict, List
 import argparse
 import json
+import time
 
 import pandas as pd
 import random
@@ -16,6 +17,7 @@ import torch
 
 from daam import trace
 from daam.experiment import GenerationExperiment, build_word_list_coco80
+from daam.pipeline_stable_diffusion_v2 import StableDiffusionV2Pipeline
 from daam.utils import set_seed, cached_nlp
 
 
@@ -60,6 +62,9 @@ def main():
     parser.add_argument('--regenerate', action='store_true')
     parser.add_argument('--seed-offset', type=int, default=0)
     parser.add_argument('--num-timesteps', type=int, default=30)
+    parser.add_argument('--v2-path', type=str)
+    parser.add_argument('--random-seed', action='store_true')
+    parser.add_argument('--save-all-heat-maps', action='store_true')
     args = parser.parse_args()
 
     gen = set_seed(args.seed)
@@ -157,16 +162,19 @@ def main():
     else:
         space_factors = []
 
-    model_id = 'CompVis/stable-diffusion-v1-4'
     device = 'cuda'
 
-    pipe = StableDiffusionPipeline.from_pretrained(model_id, use_auth_token=True)
-    pipe = pipe.to(device)
-    seed = args.seed
+    if args.v2_path:
+        pipe = StableDiffusionV2Pipeline(args.v2_path)
+    else:
+        model_id = 'CompVis/stable-diffusion-v1-4'
+        pipe = StableDiffusionPipeline.from_pretrained(model_id, use_auth_token=True)
+        pipe = pipe.to(device)
 
     with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
         for prompt_id, prompt in tqdm(prompts):
-            # gen = set_seed(seed)  # Uncomment this for seed fix
+            seed = int(time.time()) if args.random_seed else args.seed
+            gen = set_seed(seed)  # Uncomment this for seed fix
 
             if args.action == 'template' or args.action == 'cconj':
                 seed = int(prompt_id.split('-')[1]) + args.seed_offset
@@ -191,6 +199,7 @@ def main():
 
                     exp = GenerationExperiment(
                         id=prompt_id,
+                        path=Path(args.output_folder),
                         global_heat_map=tc.compute_global_heat_map(prompt, **map_kwargs).heat_maps,
                         seed=seed,
                         prompt=prompt,
@@ -205,6 +214,7 @@ def main():
 
                     exp = GenerationExperiment(
                         id=prompt_id,
+                        path=Path(args.output_folder),
                         global_heat_map=tc.compute_global_heat_map(prompt, **map_kwargs).heat_maps,
                         seed=seed,
                         prompt=prompt,
@@ -213,6 +223,9 @@ def main():
                     )
 
                     exp.save(args.output_folder)
+
+                    if args.save_all_heat_maps:
+                        exp.save_all_heat_maps(pipe.tokenizer)
 
 
 if __name__ == '__main__':
