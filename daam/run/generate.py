@@ -1,10 +1,10 @@
-import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List
 import argparse
 import json
 import random
+import sys
 import time
 
 import pandas as pd
@@ -46,7 +46,7 @@ def build_word_list_large() -> Dict[str, List[str]]:
 
 
 def main():
-    actions = ['prompt', 'coco', 'template', 'cconj', 'coco-unreal']
+    actions = ['prompt', 'coco', 'template', 'cconj', 'coco-unreal', 'stdin']
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--action', type=str, default='prompt', choices=actions)
@@ -74,7 +74,7 @@ def main():
             captions = json.load(f)['annotations']
 
         random.shuffle(captions)
-        captions = captions[:args.gen_limit]
+        # captions = captions[:args.gen_limit]
         new_captions = []
 
         if args.action == 'coco-unreal':
@@ -86,7 +86,6 @@ def main():
                 for tok in doc:
                     if tok.pos_ == 'ADJ' or tok.pos_ == 'NOUN':
                         pos_map[tok.pos_].append(tok)
-
 
             for caption in tqdm(captions):
                 doc = cached_nlp(caption['caption'])
@@ -106,25 +105,12 @@ def main():
             print(new_prompt)
             new_captions.append(caption)
 
-        if args.lemma is not None:
-            for caption in tqdm(captions):
-                if args.lemma not in caption['caption'].lower():
-                    continue
-
-                doc = cached_nlp(caption['caption'])
-                found = False
-
-                for tok in doc:
-                    if tok.lemma_.lower() == args.lemma:
-                        found = True
-                        break
-
-                if found:
-                    new_captions.append(caption)
-
-            captions = new_captions
-
         prompts = [(caption['id'], caption['caption']) for caption in captions]
+    elif args.action == 'stdin':
+        prompts = []
+
+        for idx, line in enumerate(list(sys.stdin) * 10):
+            prompts.append((idx, line.strip()))
     elif args.action == 'template':
         template_df = pd.read_csv(args.template_data_file, sep='\t', quoting=3)
         sample_dict = defaultdict(list)
@@ -177,6 +163,31 @@ def main():
     else:
         prompts = [('prompt', input('> '))]
 
+    new_prompts = []
+    # Only one word in prompt for annotators, better to have one main subject, dependency parsing
+
+    if args.lemma is not None:
+        for prompt_id, prompt in tqdm(prompts):
+            if args.lemma not in prompt.lower():
+                continue
+
+            doc = cached_nlp(prompt)
+            found = False
+
+            for tok in doc:
+                if tok.lemma_.lower() == args.lemma and not found:
+                    found = True
+                elif tok.lemma_.lower() == args.lemma:  # filter out prompts with multiple instances of the word
+                    found = False
+                    break
+
+            if found:
+                new_prompts.append((prompt_id, prompt))
+
+        prompts = new_prompts
+
+    prompts = prompts[:args.gen_limit]
+
     model_id = 'CompVis/stable-diffusion-v1-4'
     device = 'cuda'
 
@@ -217,6 +228,7 @@ def main():
                     path=Path(args.output_folder)
                 )
                 exp.save(args.output_folder)
+                exp.clear_checkpoint()
 
                 for word in prompt.split():
                     if args.lemma is not None and cached_nlp(word)[0].lemma_.lower() != args.lemma:
@@ -224,18 +236,19 @@ def main():
 
                     exp.save_heat_map(pipe.tokenizer, word)
 
-                    for layer_idx, layer_name in enumerate(tc.layer_names):
-                        heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx)
-                        exp = GenerationExperiment(
-                            path=Path(args.output_folder),
-                            id=prompt_id,
-                            global_heat_map=heat_map.heat_maps,
-                            seed=seed,
-                            prompt=prompt,
-                            image=out.images[0]
-                        )
+                    for head_idx in range(8, 16):
+                        for layer_idx, layer_name in enumerate(tc.layer_names):
+                            heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx, head_idx=head_idx)
+                            exp = GenerationExperiment(
+                                path=Path(args.output_folder),
+                                id=prompt_id,
+                                global_heat_map=heat_map.heat_maps,
+                                seed=seed,
+                                prompt=prompt,
+                                image=out.images[0]
+                            )
 
-                        exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'l{layer_idx}-{layer_name}-')
+                            exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-')
 
 
 if __name__ == '__main__':

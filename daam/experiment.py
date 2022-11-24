@@ -123,6 +123,11 @@ class GenerationExperiment:
         from daam import HeatMap
         return HeatMap(tokenizer, self.prompt, self.global_heat_map)
 
+    def clear_checkpoint(self):
+        path = self if isinstance(self, Path) else self.path
+
+        (path / 'generation.pt').unlink(missing_ok=True)
+
     def save(self, path: str = None):
         if path is None:
             path = self.path
