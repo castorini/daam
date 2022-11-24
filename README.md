@@ -13,7 +13,7 @@ See [1littlecoder's video](https://www.youtube.com/watch?v=J2WtkA1Xfew) for a co
 
 ## Using DAAM
 
-First, install [PyTorch](https://pytorch.org) for your platform.
+First, install [PyTorch <= 1.12.1](https://pytorch.org) for your platform.
 Then, install DAAM with `pip install daam`. If you want an editable version, then do `git clone https://github.com/castorini/daam && pip install -e daam`.
 
 Using DAAM is easy.
