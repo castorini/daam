@@ -50,6 +50,7 @@ def main():
     actions = ['prompt', 'coco', 'template', 'cconj', 'coco-unreal', 'stdin']
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--low-memory', action='store_true')
     parser.add_argument('--action', type=str, default='prompt', choices=actions)
     parser.add_argument('--output-folder', '-o', type=str, default='output')
     parser.add_argument('--input-folder', '-i', type=str, default='input')
@@ -221,7 +222,7 @@ def main():
             elif args.regenerate:
                 print(f'Regenerating {prompt_id}')
 
-            with trace(pipe, low_memory=True) as tc:
+            with trace(pipe, low_memory=args.low_memory) as tc:
                 out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen)
                 exp = GenerationExperiment(
                     id=prompt_id,
@@ -240,22 +241,23 @@ def main():
 
                     exp.save_heat_map(pipe.tokenizer, word)
 
-                    for head_idx in range(8):
-                        for layer_idx, layer_name in enumerate(tc.layer_names):
-                            try:
-                                heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx, head_idx=head_idx)
-                                exp = GenerationExperiment(
-                                    path=Path(args.output_folder),
-                                    id=prompt_id,
-                                    global_heat_map=heat_map.heat_maps,
-                                    seed=seed,
-                                    prompt=prompt,
-                                    image=out.images[0]
-                                )
+                    if args.all_heads:
+                        for head_idx in range(8):
+                            for layer_idx, layer_name in enumerate(tc.layer_names):
+                                try:
+                                    heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx, head_idx=head_idx)
+                                    exp = GenerationExperiment(
+                                        path=Path(args.output_folder),
+                                        id=prompt_id,
+                                        global_heat_map=heat_map.heat_maps,
+                                        seed=seed,
+                                        prompt=prompt,
+                                        image=out.images[0]
+                                    )
 
-                                exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-')
-                            except RuntimeError:
-                                print(f'Missing ({layer_idx}, {head_idx}, {layer_name})')
+                                    exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-')
+                                except RuntimeError:
+                                    print(f'Missing ({layer_idx}, {head_idx}, {layer_name})')
 
 
 if __name__ == '__main__':
