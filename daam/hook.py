@@ -6,11 +6,12 @@ from diffusers import UNet2DConditionModel
 from diffusers.models.attention import CrossAttention
 import torch.nn as nn
 
+from .ldm.modules.attention import SpatialTransformer
+from .ldm.modules.diffusionmodules.openaimodel import UNetModel
+
 
 __all__ = ['ObjectHooker', 'ModuleLocator', 'AggregateHooker', 'UNetCrossAttentionLocator']
 
-from daam.ldm.modules.attention import SpatialTransformer
-from daam.ldm.modules.diffusionmodules.openaimodel import UNetModel
 
 ModuleType = TypeVar('ModuleType')
 ModuleListType = TypeVar('ModuleListType', bound=List)
@@ -86,7 +87,11 @@ class AggregateHooker(ObjectHooker[ModuleListType]):
 
 class UNetV2CrossAttentionLocator(ModuleLocator[CrossAttention]):
     """For Stable Diffusion v2. This probably requires a rewrite sometime later."""
-    def locate(self, model: UNetModel, layer_idx: int) -> List[CrossAttention]:
+    def __init__(self, restrict: bool = None):
+        self.restrict = restrict
+        self.layer_names = []
+
+    def locate(self, model: UNetModel) -> List[CrossAttention]:
         """
         Locate all cross-attention modules in a UNet model.
 
@@ -96,21 +101,29 @@ class UNetV2CrossAttentionLocator(ModuleLocator[CrossAttention]):
         Returns:
             `List[CrossAttention]`: The list of cross-attention modules.
         """
-        blocks = []
-        i = 0
+        self.layer_names.clear()
+        up_names = ['up'] * len(model.output_blocks)
+        down_names = ['down'] * len(model.input_blocks)
+        blocks_list = []
 
-        for unet_block in itertools.chain(model.output_blocks, model.input_blocks, [model.middle_block]):
+        for unet_block, name in itertools.chain(
+                zip(model.output_blocks, up_names),
+                zip(model.input_blocks, down_names),
+                [(model.middle_block, 'mid')]
+        ):
+            blocks = []
+
             for layer in unet_block:
                 if isinstance(layer, SpatialTransformer):
                     for transformer_block in layer.transformer_blocks:
                         blocks.append(transformer_block.attn2)
 
-                i += 1
+            blocks = [b for idx, b in enumerate(blocks) if self.restrict is None or idx in self.restrict]
+            names = [f'{name}-attn-{i}' for i in range(len(blocks)) if self.restrict is None or i in self.restrict]
+            blocks_list.extend(blocks)
+            self.layer_names.extend(names)
 
-        if layer_idx:
-            blocks = [blocks[0]]
-
-        return blocks
+        return blocks_list
 
 
 class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):

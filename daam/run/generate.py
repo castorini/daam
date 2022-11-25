@@ -242,17 +242,20 @@ def main():
 
                     for head_idx in range(8, 16):
                         for layer_idx, layer_name in enumerate(tc.layer_names):
-                            heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx, head_idx=head_idx)
-                            exp = GenerationExperiment(
-                                path=Path(args.output_folder),
-                                id=prompt_id,
-                                global_heat_map=heat_map.heat_maps,
-                                seed=seed,
-                                prompt=prompt,
-                                image=out.images[0]
-                            )
+                            try:
+                                heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx, head_idx=head_idx)
+                                exp = GenerationExperiment(
+                                    path=Path(args.output_folder),
+                                    id=prompt_id,
+                                    global_heat_map=heat_map.heat_maps,
+                                    seed=seed,
+                                    prompt=prompt,
+                                    image=out.images[0]
+                                )
 
-                            exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-')
+                                exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-')
+                            except RuntimeError:
+                                print(f'Missing ({layer_idx}, {head_idx}, {layer_name})')
 
 
 if __name__ == '__main__':

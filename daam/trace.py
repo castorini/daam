@@ -96,8 +96,12 @@ class MmDetectHeatMap:
 
 class DiffusionHeatMapHooker(AggregateHooker):
     def __init__(self, pipeline: StableDiffusionPipeline | StableDiffusionV2Pipeline, low_memory: bool = False):
+        self.all_heat_maps = RawHeatMapCollection()
+        self.max_hw = 4096
+
         if isinstance(pipeline, StableDiffusionV2Pipeline):
             self.locator = UNetV2CrossAttentionLocator(restrict={0} if low_memory else None)
+            self.max_hw = 9216
         else:
             self.locator = UNetCrossAttentionLocator(restrict={0} if low_memory else None)
 
@@ -105,7 +109,8 @@ class DiffusionHeatMapHooker(AggregateHooker):
             UNetCrossAttentionHooker(
                 x,
                 self.all_heat_maps,
-                layer_idx=idx
+                layer_idx=idx,
+                max_hw=self.max_hw
             ) for idx, x in enumerate(self.locator.locate(pipeline.unet))
         ]
         super().__init__(modules)
@@ -134,17 +139,18 @@ class DiffusionHeatMapHooker(AggregateHooker):
         heat_maps = self.all_heat_maps
 
         if factors is None:
-            factors = {1, 2, 4, 8, 16, 32}
+            factors = {0, 1, 2, 4, 8, 16, 32, 64}
         else:
             factors = set(factors)
 
         all_merges = []
+        x = int(np.sqrt(self.max_hw))
 
         with torch.cuda.amp.autocast(dtype=torch.float32):
             for (factor, layer, head), heat_map in heat_maps:
                 if factor in factors and (head_idx is None or head_idx == head) and (layer_idx is None or layer_idx == layer):
                     heat_map = heat_map.unsqueeze(1)
-                    all_merges.append(F.interpolate(heat_map, size=(64, 64), mode='bicubic'))
+                    all_merges.append(F.interpolate(heat_map, size=(x, x), mode='bicubic'))
 
             maps = torch.stack(all_merges, dim=0)
             maps = maps.mean(0)[:, 0]
@@ -153,11 +159,19 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
 
 class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
-    def __init__(self, module: CrossAttention, heat_maps: 'RawHeatMapCollection', context_size: int = 77, layer_idx: int = 0):
+    def __init__(
+            self,
+            module: CrossAttention,
+            heat_maps: 'RawHeatMapCollection',
+            context_size: int = 77,
+            layer_idx: int = 0,
+            max_hw: int = 9216
+    ):
         super().__init__(module)
         self.heat_maps = heat_maps
         self.context_size = context_size
         self.layer_idx = layer_idx
+        self.max_hw = max_hw
 
     @torch.no_grad()
     def _unravel_attn(self, x):
@@ -208,7 +222,7 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
             attn_slice = (
                     torch.einsum("b i d, b j d -> b i j", query[start_idx:end_idx], key[start_idx:end_idx]) * self.scale
             )
-            factor = int(math.sqrt(4096 // attn_slice.shape[1]))
+            factor = int(math.sqrt(self.max_hw // attn_slice.shape[1]))
             attn_slice = attn_slice.softmax(-1)
             hid_states = torch.einsum("b i j, b j d -> b i d", attn_slice, value[start_idx:end_idx])
 
