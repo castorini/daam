@@ -50,6 +50,7 @@ def main():
     actions = ['prompt', 'coco', 'template', 'cconj', 'coco-unreal', 'stdin']
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--low-memory', action='store_true')
     parser.add_argument('--action', type=str, default='prompt', choices=actions)
     parser.add_argument('--output-folder', '-o', type=str, default='output')
     parser.add_argument('--input-folder', '-i', type=str, default='input')
@@ -66,7 +67,6 @@ def main():
     parser.add_argument('--v2-path', type=str)
     parser.add_argument('--random-seed', action='store_true')
     parser.add_argument('--save-all-heat-maps', action='store_true')
-    parser.add_argument('--high-memory', action='store_true')
     args = parser.parse_args()
 
     gen = set_seed(args.seed)
@@ -206,6 +206,7 @@ def main():
         for prompt_id, prompt in tqdm(prompts):
             seed = int(time.time()) if args.random_seed else args.seed
             gen = set_seed(seed)  # Uncomment this for seed fix
+            prompt = prompt.replace(',', ' ,').replace('.', ' .').strip()
 
             if args.action == 'template' or args.action == 'cconj':
                 seed = int(prompt_id.split('-')[1]) + args.seed_offset
@@ -222,7 +223,7 @@ def main():
             elif args.regenerate:
                 print(f'Regenerating {prompt_id}')
 
-            with trace(pipe, low_memory=args.high_memory) as tc:
+            with trace(pipe, low_memory=args.low_memory) as tc:
                 out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen)
                 exp = GenerationExperiment(
                     id=prompt_id,
@@ -233,7 +234,9 @@ def main():
                     path=Path(args.output_folder)
                 )
                 exp.save(args.output_folder)
-                exp.clear_checkpoint()
+
+                if args.all_heads:
+                    exp.clear_checkpoint()
 
                 for word in prompt.split():
                     if args.lemma is not None and cached_nlp(word)[0].lemma_.lower() != args.lemma:
