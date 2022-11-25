@@ -3,11 +3,11 @@ from pathlib import Path
 from typing import Dict, List
 import argparse
 import json
+import random
+import sys
 import time
 
 import pandas as pd
-import random
-
 from diffusers import StableDiffusionPipeline
 from nltk.corpus import wordnet as wn
 from tqdm import tqdm
@@ -47,11 +47,10 @@ def build_word_list_large() -> Dict[str, List[str]]:
 
 
 def main():
-    actions = ['prompt', 'coco', 'template', 'cconj', 'coco-unreal']
+    actions = ['prompt', 'coco', 'template', 'cconj', 'coco-unreal', 'stdin']
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--action', type=str, default='prompt', choices=actions)
-    parser.add_argument('--study', '-st', type=str, default='normal', choices=['normal', 'time-ablation', 'space-ablation'])
     parser.add_argument('--output-folder', '-o', type=str, default='output')
     parser.add_argument('--input-folder', '-i', type=str, default='input')
     parser.add_argument('--seed', '-s', type=int, default=0)
@@ -62,6 +61,8 @@ def main():
     parser.add_argument('--regenerate', action='store_true')
     parser.add_argument('--seed-offset', type=int, default=0)
     parser.add_argument('--num-timesteps', type=int, default=30)
+    parser.add_argument('--all-heads', action='store_true')
+    parser.add_argument('--word', type=str)
     parser.add_argument('--v2-path', type=str)
     parser.add_argument('--random-seed', action='store_true')
     parser.add_argument('--save-all-heat-maps', action='store_true')
@@ -69,13 +70,16 @@ def main():
 
     gen = set_seed(args.seed)
     eng = inflect.engine()
+    args.lemma = cached_nlp(args.word)[0].lemma_ if args.word else None
 
     if args.action.startswith('coco'):
         with (Path(args.input_folder) / 'captions_val2014.json').open() as f:
             captions = json.load(f)['annotations']
 
         random.shuffle(captions)
-        captions = captions[:args.gen_limit]
+        # captions = captions[:args.gen_limit]
+        new_captions = []
+
         if args.action == 'coco-unreal':
             pos_map = defaultdict(list)
 
@@ -99,7 +103,18 @@ def main():
 
                 print(new_prompt)
 
+            new_prompt = ''.join([tok.text_with_ws for tok in new_tokens])
+            caption['caption'] = new_prompt
+
+            print(new_prompt)
+            new_captions.append(caption)
+
         prompts = [(caption['id'], caption['caption']) for caption in captions]
+    elif args.action == 'stdin':
+        prompts = []
+
+        for idx, line in enumerate(list(sys.stdin) * 10):
+            prompts.append((idx, line.strip()))
     elif args.action == 'template':
         template_df = pd.read_csv(args.template_data_file, sep='\t', quoting=3)
         sample_dict = defaultdict(list)
@@ -152,15 +167,30 @@ def main():
     else:
         prompts = [('prompt', input('> '))]
 
-    if args.study == 'time-ablation':
-        time_indices = [1, 2, 3, 5, 8, 13, 21, args.num_timesteps, -1, -2, -3, -5, -8, -13, -21]
-    else:
-        time_indices = [args.num_timesteps]
+    new_prompts = []
+    # Only one word in prompt for annotators, better to have one main subject, dependency parsing
 
-    if args.study == 'space-ablation':
-        space_factors = [[1], [1, 2], [1, 2, 4], [1, 2, 4, 8], [2, 4, 8], [4, 8], [8]]
-    else:
-        space_factors = []
+    if args.lemma is not None:
+        for prompt_id, prompt in tqdm(prompts):
+            if args.lemma not in prompt.lower():
+                continue
+
+            doc = cached_nlp(prompt)
+            found = False
+
+            for tok in doc:
+                if tok.lemma_.lower() == args.lemma and not found:
+                    found = True
+                elif tok.lemma_.lower() == args.lemma:  # filter out prompts with multiple instances of the word
+                    found = False
+                    break
+
+            if found:
+                new_prompts.append((prompt_id, prompt))
+
+        prompts = new_prompts
+
+    prompts = prompts[:args.gen_limit]
 
     device = 'cuda'
 
@@ -191,41 +221,38 @@ def main():
             elif args.regenerate:
                 print(f'Regenerating {prompt_id}')
 
-            with trace(pipe, weighted=False) as tc:
+            with trace(pipe, low_memory=True) as tc:
                 out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen)
+                exp = GenerationExperiment(
+                    id=prompt_id,
+                    global_heat_map=tc.compute_global_heat_map(prompt).heat_maps,
+                    seed=seed,
+                    prompt=prompt,
+                    image=out.images[0],
+                    path=Path(args.output_folder)
+                )
+                exp.save(args.output_folder)
+                exp.clear_checkpoint()
 
-                for factors in space_factors:
-                    map_kwargs = dict(factors=factors)
+                for word in prompt.split():
+                    if args.lemma is not None and cached_nlp(word)[0].lemma_.lower() != args.lemma:
+                        continue
 
-                    exp = GenerationExperiment(
-                        id=prompt_id,
-                        path=Path(args.output_folder),
-                        global_heat_map=tc.compute_global_heat_map(prompt, **map_kwargs).heat_maps,
-                        seed=seed,
-                        prompt=prompt,
-                        image=out.images[0],
-                        subtype=f'space{"-".join(map(str, factors))}'
-                    )
+                    exp.save_heat_map(pipe.tokenizer, word)
 
-                    exp.save(args.output_folder)
+                    for head_idx in range(8, 16):
+                        for layer_idx, layer_name in enumerate(tc.layer_names):
+                            heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx, head_idx=head_idx)
+                            exp = GenerationExperiment(
+                                path=Path(args.output_folder),
+                                id=prompt_id,
+                                global_heat_map=heat_map.heat_maps,
+                                seed=seed,
+                                prompt=prompt,
+                                image=out.images[0]
+                            )
 
-                for time_idx in time_indices:
-                    map_kwargs = dict(first_n=time_idx) if time_idx > 0 else dict(last_n=-time_idx)
-
-                    exp = GenerationExperiment(
-                        id=prompt_id,
-                        path=Path(args.output_folder),
-                        global_heat_map=tc.compute_global_heat_map(prompt, **map_kwargs).heat_maps,
-                        seed=seed,
-                        prompt=prompt,
-                        image=out.images[0],
-                        subtype=f'time{time_idx}' if time_idx != args.num_timesteps else '.'
-                    )
-
-                    exp.save(args.output_folder)
-
-                    if args.save_all_heat_maps:
-                        exp.save_all_heat_maps(pipe.tokenizer)
+                            exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-')
 
 
 if __name__ == '__main__':

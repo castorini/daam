@@ -124,6 +124,11 @@ class GenerationExperiment:
         from daam import HeatMap
         return HeatMap(tokenizer, self.prompt, self.global_heat_map)
 
+    def clear_checkpoint(self):
+        path = self if isinstance(self, Path) else self.path
+
+        (path / 'generation.pt').unlink(missing_ok=True)
+
     def save(self, path: str = None):
         if path is None:
             path = self.path
@@ -202,11 +207,11 @@ class GenerationExperiment:
         im = PIL.Image.fromarray((mask * 255).unsqueeze(-1).expand(-1, -1, 4).cpu().byte().numpy())
         im.save(path / self.subtype / f'{word.lower()}.{name}.pred.png')
 
-    def save_heat_map(self, tokenizer: PreTrainedTokenizer, word: str, crop: int = None) -> Path:
+    def save_heat_map(self, tokenizer: PreTrainedTokenizer, word: str, crop: int = None, output_prefix: str = '') -> Path:
         from .trace import HeatMap  # because of cyclical import
         heat_map = HeatMap(tokenizer, self.prompt, self.global_heat_map)
         heat_map = expand_image(heat_map.compute_word_heat_map(word))
-        path = self.path / self.subtype / f'{word.lower()}.heat_map.png'
+        path = self.path / self.subtype / f'{output_prefix}{word.lower()}.heat_map.png'
         plot_overlay_heat_map(self.image, heat_map, word, path, crop=crop)
 
         return path
