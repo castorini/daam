@@ -240,7 +240,7 @@ def main():
 
                     exp.save_heat_map(pipe.tokenizer, word)
 
-                    for head_idx in range(8, 16):
+                    for head_idx in range(8):
                         for layer_idx, layer_name in enumerate(tc.layer_names):
                             try:
                                 heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx, head_idx=head_idx)
