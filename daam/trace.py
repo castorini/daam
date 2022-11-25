@@ -154,6 +154,8 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
             maps = torch.stack(all_merges, dim=0)
             maps = maps.mean(0)[:, 0]
+        
+        maps = maps[:len(self.pipe.tokenizer.tokenize(prompt)) + 2]  # 1 for SOS and 1 for padding
 
         return HeatMap(self.pipe.tokenizer, prompt, maps)
 
