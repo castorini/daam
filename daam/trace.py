@@ -222,7 +222,7 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
             attn_slice = (
                     torch.einsum("b i d, b j d -> b i j", query[start_idx:end_idx], key[start_idx:end_idx]) * self.scale
             )
-            factor = int(math.sqrt(self.max_hw // attn_slice.shape[1]))
+            factor = int(math.sqrt(hk_self.max_hw // attn_slice.shape[1]))
             attn_slice = attn_slice.softmax(-1)
             hid_states = torch.einsum("b i j, b j d -> b i d", attn_slice, value[start_idx:end_idx])
 
