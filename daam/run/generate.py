@@ -66,7 +66,7 @@ def main():
     parser.add_argument('--word', type=str)
     parser.add_argument('--v2-path', type=str)
     parser.add_argument('--random-seed', action='store_true')
-    parser.add_argument('--save-all-heat-maps', action='store_true')
+    parser.add_argument('--normalize', action='store_true')
     args = parser.parse_args()
 
     gen = set_seed(args.seed)
@@ -208,7 +208,7 @@ def main():
             gen = set_seed(seed)  # Uncomment this for seed fix
             prompt = prompt.replace(',', ' ,').replace('.', ' .').strip()
 
-            if args.action == 'template' or args.action == 'cconj':
+            if args.action == 'cconj':
                 seed = int(prompt_id.split('-')[1]) + args.seed_offset
                 gen = set_seed(seed)
 
@@ -227,7 +227,7 @@ def main():
                 out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen)
                 exp = GenerationExperiment(
                     id=prompt_id,
-                    global_heat_map=tc.compute_global_heat_map(prompt).heat_maps,
+                    global_heat_map=tc.compute_global_heat_map(prompt, normalize=args.normalize).heat_maps,
                     seed=seed,
                     prompt=prompt,
                     image=out.images[0],
@@ -242,13 +242,13 @@ def main():
                     if args.lemma is not None and cached_nlp(word)[0].lemma_.lower() != args.lemma:
                         continue
 
-                    exp.save_heat_map(pipe.tokenizer, word)
+                    exp.save_heat_map(pipe.tokenizer, word, absolute=args.normalize)
 
                     if args.all_heads:
                         for head_idx in range(8):
                             for layer_idx, layer_name in enumerate(tc.layer_names):
                                 try:
-                                    heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx, head_idx=head_idx)
+                                    heat_map = tc.compute_global_heat_map(prompt, layer_idx=layer_idx, head_idx=head_idx, normalize=args.normalize)
                                     exp = GenerationExperiment(
                                         path=Path(args.output_folder),
                                         id=prompt_id,
@@ -258,7 +258,12 @@ def main():
                                         image=out.images[0]
                                     )
 
-                                    exp.save_heat_map(pipe.tokenizer, word, output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-')
+                                    exp.save_heat_map(
+                                        pipe.tokenizer,
+                                        word,
+                                        output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-',
+                                        absolute=args.normalize
+                                    )
                                 except RuntimeError:
                                     print(f'Missing ({layer_idx}, {head_idx}, {layer_name})')
 

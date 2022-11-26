@@ -6,7 +6,7 @@ import torch
 from diffusers import StableDiffusionPipeline
 from open_clip import SimpleTokenizer
 
-from transformers import CLIPFeatureExtractor, CLIPTextModel, CLIPTokenizer
+from transformers import CLIPFeatureExtractor, CLIPTextModel, CLIPTokenizer, AutoTokenizer
 
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.pipeline_utils import DiffusionPipeline
@@ -54,13 +54,12 @@ def load_model_from_config(config, ckpt, verbose=False):
 class StableDiffusionV2Pipeline:
     """Pipeline for text-to-image generation using Stable Diffusion V2."""
     def __init__(self, checkpoint_path: str):
-        self.config = OmegaConf.load(f"daam/sd_config/stable-diffusion/v2-inference-v.yaml")
+        self.config = OmegaConf.load(f"daam/sd_config/stable-diffusion/v2-inference.yaml")
         self.model = load_model_from_config(self.config, checkpoint_path).cuda()
         self.sampler = DDIMSampler(self.model)
         self.unet = self.model.model.diffusion_model
-        old_model = StableDiffusionPipeline.from_pretrained('CompVis/stable-diffusion-v1-4', use_auth_token=True)
-        self.tokenizer = old_model.tokenizer
-        del old_model
+        tok_pth = '/home/ralph/.cache/huggingface/diffusers/models--CompVis--stable-diffusion-v1-4/snapshots/c47dae76a67f9470c56695af441b28f8a16f7056/tokenizer'
+        self.tokenizer = AutoTokenizer.from_pretrained(tok_pth, use_auth_token=True)
 
     def enable_attention_slicing(self, slice_size: Optional[Union[str, int]] = "auto"):
         r"""
@@ -149,7 +148,7 @@ class StableDiffusionV2Pipeline:
         """
         opt = argparse.Namespace()
         opt.C = 4
-        opt.H = opt.W = 768  # Must be 768 if it's the V2-v model
+        opt.H = opt.W = 512  # Must be 768 if it's the V2-v model
         opt.f = 8
         opt.n_samples = 1
         opt.steps = num_inference_steps

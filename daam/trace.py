@@ -101,7 +101,7 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
         if isinstance(pipeline, StableDiffusionV2Pipeline):
             self.locator = UNetV2CrossAttentionLocator(restrict={0} if low_memory else None)
-            self.max_hw = 9216
+            self.max_hw = 4096  # 9216 if it's V
         else:
             self.locator = UNetCrossAttentionLocator(restrict={0} if low_memory else None)
 
@@ -121,8 +121,8 @@ class DiffusionHeatMapHooker(AggregateHooker):
     def layer_names(self):
         return self.locator.layer_names
 
-    def compute_global_heat_map(self, prompt, factors=None, head_idx=None, layer_idx=None):
-        # type: (str, List[float], int, int) -> HeatMap
+    def compute_global_heat_map(self, prompt, factors=None, head_idx=None, layer_idx=None, normalize=False):
+        # type: (str, List[float], int, int, bool) -> HeatMap
         """
         Compute the global heat map for the given prompt, aggregating across time (inference steps) and space (different
         spatial transformer block heat maps).
@@ -150,12 +150,15 @@ class DiffusionHeatMapHooker(AggregateHooker):
             for (factor, layer, head), heat_map in heat_maps:
                 if factor in factors and (head_idx is None or head_idx == head) and (layer_idx is None or layer_idx == layer):
                     heat_map = heat_map.unsqueeze(1)
-                    all_merges.append(F.interpolate(heat_map, size=(x, x), mode='bicubic'))
+                    # The clamping fixes undershoot.
+                    all_merges.append(F.interpolate(heat_map, size=(x, x), mode='bicubic').clamp_(min=0))
 
             maps = torch.stack(all_merges, dim=0)
             maps = maps.mean(0)[:, 0]
-        
-        maps = maps[:len(self.pipe.tokenizer.tokenize(prompt)) + 2]  # 1 for SOS and 1 for padding
+            maps = maps[:len(self.pipe.tokenizer.tokenize(prompt)) + 2]  # 1 for SOS and 1 for padding
+
+            if normalize:
+                maps = maps / (maps[1:-1].sum(0, keepdim=True) + 1e-6)  # drop out [SOS] and [PAD] for proper probabilities
 
         return HeatMap(self.pipe.tokenizer, prompt, maps)
 
@@ -196,6 +199,7 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
         with torch.cuda.amp.autocast(dtype=torch.float32):
             for map_ in x:
                 map_ = map_.view(map_.size(0), h, w)
+                map_ = map_[map_.size(0) // 2:]  # Filter out unconditional
                 maps.append(map_)
 
         maps = torch.stack(maps, 0)  # shape: (tokens, heads, height, width)

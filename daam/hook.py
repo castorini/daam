@@ -108,7 +108,8 @@ class UNetV2CrossAttentionLocator(ModuleLocator[CrossAttention]):
 
         for unet_block, name in itertools.chain(
                 zip(model.output_blocks, up_names),
-                zip(model.input_blocks, down_names)
+                zip(model.input_blocks, down_names),
+                # [(model.middle_block, 'mid')]
         ):
             blocks = []
 
