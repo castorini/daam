@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 
 
-__all__ = ['compute_iou', 'MeanEvaluator']
+__all__ = ['compute_iou', 'MeanEvaluator', 'load_mask']
 
 
 def compute_iou(a: torch.Tensor, b: torch.Tensor) -> float:

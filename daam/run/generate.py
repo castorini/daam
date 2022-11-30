@@ -196,7 +196,7 @@ def main():
                 out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen)
                 exp = GenerationExperiment(
                     id=prompt_id,
-                    global_heat_map=tc.compute_global_heat_map(prompt).heat_maps,
+                    global_heat_map=tc.compute_global_heat_map().heat_maps,
                     seed=seed,
                     prompt=prompt,
                     image=out.images[0],

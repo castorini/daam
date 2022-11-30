@@ -102,12 +102,12 @@ def _add_mask(masks: Dict[str, torch.Tensor], word: str, mask: torch.Tensor, sim
 @dataclass
 class GenerationExperiment:
     """Class to hold experiment parameters. Pickleable."""
-    id: str
     image: PIL.Image.Image
     global_heat_map: torch.Tensor
     seed: int
     prompt: str
 
+    id: str = '.'
     path: Optional[Path] = None
     truth_masks: Optional[Dict[str, torch.Tensor]] = None
     prediction_masks: Optional[Dict[str, torch.Tensor]] = None

@@ -1,13 +1,16 @@
 from collections import defaultdict
+from pathlib import Path
 from typing import List, Type, Any, Dict, Tuple, Set, Union
 import math
 
 from diffusers import StableDiffusionPipeline
 from diffusers.models.attention import CrossAttention
 import numpy as np
+import PIL.Image as Image
 import torch
 import torch.nn.functional as F
 
+from .experiment import GenerationExperiment
 from .hook import ObjectHooker, AggregateHooker, UNetCrossAttentionLocator
 from .utils import compute_token_merge_indices
 
@@ -116,7 +119,14 @@ class DiffusionHeatMapHooker(AggregateHooker):
                     # The clamping fixes undershoot.
                     all_merges.append(F.interpolate(heat_map, size=(x, x), mode='bicubic').clamp_(min=0))
 
-            maps = torch.stack(all_merges, dim=0)
+            try:
+                maps = torch.stack(all_merges, dim=0)
+            except RuntimeError:
+                if head_idx is not None or layer_idx is not None:
+                    raise RuntimeError('No heat maps found for the given parameters.')
+                else:
+                    raise RuntimeError('No heat maps found. Did you forget to call `with trace(...)` during generation?')
+
             maps = maps.mean(0)[:, 0]
             maps = maps[:len(self.pipe.tokenizer.tokenize(prompt)) + 2]  # 1 for SOS and 1 for padding
 
@@ -132,7 +142,7 @@ class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
         self.heat_maps = parent_trace.all_heat_maps
         self.parent_trace = parent_trace
 
-    def _hooked_call(hk_self, self, prompt: Union[str, List[str]], *args, **kwargs):
+    def _hooked_encode_prompt(hk_self, self, prompt: Union[str, List[str]], *args, **kwargs):
         if not isinstance(prompt, str) and len(prompt) > 1:
             raise ValueError('Only single prompt generation is supported for heat map computation.')
         elif not isinstance(prompt, str):
@@ -142,12 +152,12 @@ class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
 
         hk_self.heat_maps.clear()
         hk_self.parent_trace.last_prompt = last_prompt
-        ret = hk_self.monkey_super('__call__', prompt, *args, **kwargs)
+        ret = hk_self.monkey_super('_encode_prompt', prompt, *args, **kwargs)
 
         return ret
 
     def _hook_impl(self):
-        self.monkey_patch('__call__', self._hooked_call)
+        self.monkey_patch('_encode_prompt', self._hooked_encode_prompt)
 
 
 class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):

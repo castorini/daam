@@ -57,7 +57,7 @@ gen = set_seed(0)  # for reproducibility
 with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
     with trace(pipe) as tc:
         out = pipe(prompt, num_inference_steps=30, generator=gen)
-        heat_map = tc.compute_global_heat_map(prompt)
+        heat_map = tc.compute_global_heat_map()
         heat_map = expand_image(heat_map.compute_word_heat_map('dog'))
         plot_overlay_heat_map(out.images[0], heat_map)
         plt.show()
