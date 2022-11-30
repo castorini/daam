@@ -10,7 +10,8 @@ import torch
 import torch.nn.functional as F
 
 
-__all__ = ['expand_image', 'set_seed', 'compute_token_merge_indices', 'plot_overlay_heat_map', 'plot_mask_heat_map']
+__all__ = ['expand_image', 'set_seed', 'compute_token_merge_indices', 'plot_overlay_heat_map', 'plot_mask_heat_map',
+           'cached_nlp']
 
 
 def expand_image(im: torch.Tensor, out: int = 512, absolute: bool = False, threshold: float = None) -> torch.Tensor:
@@ -28,26 +29,33 @@ def expand_image(im: torch.Tensor, out: int = 512, absolute: bool = False, thres
     return im.squeeze()
 
 
-def plot_overlay_heat_map(im, heat_map, word=None, out_file=None, crop=None):
-    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int) -> None
+def plot_overlay_heat_map(im, heat_map, word=None, out_file=None, crop=None, color_normalize=True):
+    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool) -> None
     plt.clf()
     plt.rcParams.update({'font.size': 24})
 
-    im = np.array(im)
-    if crop is not None:
-        heat_map = heat_map.squeeze()[crop:-crop, crop:-crop]
-        im = im[crop:-crop, crop:-crop]
+    with torch.cuda.amp.autocast(dtype=torch.float32):
+        im = np.array(im)
 
-    plt.imshow(heat_map.squeeze().cpu().numpy(), cmap='jet')
-    im = torch.from_numpy(im).float() / 255
-    im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
-    plt.imshow(im)
+        if crop is not None:
+            heat_map = heat_map.squeeze()[crop:-crop, crop:-crop]
+            im = im[crop:-crop, crop:-crop]
 
-    if word is not None:
-        plt.title(word)
+        if color_normalize:
+            plt.imshow(heat_map.squeeze().cpu().numpy(), cmap='jet')
+        else:
+            heat_map = heat_map.clamp_(min=0, max=1)
+            plt.imshow(heat_map.squeeze().cpu().numpy(), cmap='jet', vmin=0.0, vmax=1.0)
 
-    if out_file is not None:
-        plt.savefig(out_file)
+        im = torch.from_numpy(im).float() / 255
+        im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
+        plt.imshow(im)
+
+        if word is not None:
+            plt.title(word)
+
+        if out_file is not None:
+            plt.savefig(out_file)
 
 
 def plot_mask_heat_map(im: PIL.Image.Image, heat_map: torch.Tensor, threshold: float = 0.4):

@@ -83,7 +83,11 @@ class AggregateHooker(ObjectHooker[ModuleListType]):
 
 
 class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
-    def locate(self, model: UNet2DConditionModel, layer_idx: int) -> List[CrossAttention]:
+    def __init__(self, restrict: bool = None):
+        self.restrict = restrict
+        self.layer_names = []
+
+    def locate(self, model: UNet2DConditionModel) -> List[CrossAttention]:
         """
         Locate all cross-attention modules in a UNet2DConditionModel.
 
@@ -93,18 +97,26 @@ class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
         Returns:
             `List[CrossAttention]`: The list of cross-attention modules.
         """
-        blocks = []
-        i = 0
+        self.layer_names.clear()
+        blocks_list = []
+        up_names = ['up'] * len(model.up_blocks)
+        down_names = ['down'] * len(model.up_blocks)
 
-        for unet_block in itertools.chain(model.up_blocks, model.down_blocks, [model.mid_block]):
+        # The middle block was not found to be useful.
+        for unet_block, name in itertools.chain(
+                zip(model.up_blocks, up_names),
+                zip(model.down_blocks, down_names)
+        ):
             if 'CrossAttn' in unet_block.__class__.__name__:
-                if not layer_idx or i == layer_idx:
-                    for spatial_transformer in unet_block.attentions:
-                        for transformer_block in spatial_transformer.transformer_blocks:
-                            blocks.append(transformer_block.attn2)
-            i += 1
-        
-        if layer_idx:
-            blocks = [blocks[0]]
+                blocks = []
 
-        return blocks
+                for spatial_transformer in unet_block.attentions:
+                    for transformer_block in spatial_transformer.transformer_blocks:
+                        blocks.append(transformer_block.attn2)
+
+                blocks = [b for idx, b in enumerate(blocks) if self.restrict is None or idx in self.restrict]
+                names = [f'{name}-attn-{i}' for i in range(len(blocks)) if self.restrict is None or i in self.restrict]
+                blocks_list.extend(blocks)
+                self.layer_names.extend(names)
+
+        return blocks_list

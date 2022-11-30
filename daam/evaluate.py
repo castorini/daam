@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List
+from typing import List, Union
 
 from scipy.optimize import linear_sum_assignment
 import PIL.Image as Image
@@ -37,7 +37,7 @@ class UnsupervisedEvaluator:
         self.ious = defaultdict(list)
         self.num_samples = 0
 
-    def log_iou(self, preds: torch.Tensor | List[torch.Tensor], truth: torch.Tensor, gt_idx: int = 0, pred_idx: int = 0):
+    def log_iou(self, preds: Union[torch.Tensor, List[torch.Tensor]], truth: torch.Tensor, gt_idx: int = 0, pred_idx: int = 0):
         if not isinstance(preds, list):
             preds = [preds]
 
@@ -74,7 +74,7 @@ class MeanEvaluator:
         self.intensities: List[float] = []
         self.name = name
 
-    def log_iou(self, preds: torch.Tensor | List[torch.Tensor], truth: torch.Tensor):
+    def log_iou(self, preds: Union[torch.Tensor, List[torch.Tensor]], truth: torch.Tensor):
         if not isinstance(preds, list):
             preds = [preds]
 

@@ -10,5 +10,10 @@ setuptools.setup(
     description='What the DAAM: Interpreting Stable Diffusion Using Cross Attention.',
     install_requires=open('requirements.txt').read().strip().splitlines(),
     packages=setuptools.find_packages(),
-    python_requires='>=3.10'
+    python_requires='>=3.8',
+    entry_points={
+        'console_scripts': [
+            'daam = daam.run.generate:main',
+        ]
+    }
 )

@@ -1,14 +1,13 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List
 import argparse
 import json
+import random
+import sys
+import time
 
 import pandas as pd
-import random
-
 from diffusers import StableDiffusionPipeline
-from nltk.corpus import wordnet as wn
 from tqdm import tqdm
 import inflect
 import numpy as np
@@ -19,58 +18,44 @@ from daam.experiment import GenerationExperiment, build_word_list_coco80
 from daam.utils import set_seed, cached_nlp
 
 
-def build_word_list_large() -> Dict[str, List[str]]:
-    cat5 = ['vegetable', 'fruit', 'car', 'mammal', 'reptile']
-    topk = open('data/top100k').readlines()[:30000]
-    topk = set(w.strip() for w in topk)
-    words_map = {}
-
-    for cat in cat5:
-        words = set()
-        x = wn.synsets(cat, 'n')[0]
-        hyponyms = list(x.closure(lambda s: s.hyponyms()))
-
-        for synset in hyponyms:
-            if any('_' in w for w in synset.lemma_names()):
-                continue
-
-            word = synset.lemma_names()[0].lower()
-
-            if '_' not in word and word in topk:
-                words.add(word)
-
-        words_map[cat] = list(words)
-
-    return words_map
-
-
 def main():
-    actions = ['prompt', 'coco', 'template', 'cconj', 'coco-unreal']
+    actions = ['quickgen', 'prompt', 'coco', 'template', 'cconj', 'coco-unreal', 'stdin']
+    model_id_map = {
+        'v1': 'runwayml/stable-diffusion-v1-5',
+        'v2-base': 'stabilityai/stable-diffusion-2-base',
+        'v2-large': 'stabilityai/stable-diffusion-2'
+    }
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--action', type=str, default='prompt', choices=actions)
-    parser.add_argument('--study', '-st', type=str, default='normal', choices=['normal', 'time-ablation', 'space-ablation'])
-    parser.add_argument('--output-folder', '-o', type=str, default='output')
+    parser.add_argument('prompt', nargs='?', type=str)
+    parser.add_argument('--action', '-a', type=str, choices=actions, default=actions[0])
+    parser.add_argument('--low-memory', action='store_true')
+    parser.add_argument('--model', type=str, default='v2-base', choices=list(model_id_map.keys()))
+    parser.add_argument('--output-folder', '-o', type=str)
     parser.add_argument('--input-folder', '-i', type=str, default='input')
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--gen-limit', type=int, default=1000)
     parser.add_argument('--template', type=str, default='{numeral} {noun}')
-    parser.add_argument('--scramble-unreal', action='store_true')
     parser.add_argument('--template-data-file', '-tdf', type=str, default='template.tsv')
     parser.add_argument('--regenerate', action='store_true')
     parser.add_argument('--seed-offset', type=int, default=0)
     parser.add_argument('--num-timesteps', type=int, default=30)
+    parser.add_argument('--all-heads', action='store_true')
+    parser.add_argument('--word', type=str)
+    parser.add_argument('--random-seed', action='store_true')
     args = parser.parse_args()
 
-    gen = set_seed(args.seed)
     eng = inflect.engine()
+    args.lemma = cached_nlp(args.word)[0].lemma_ if args.word else None
+    model_id = model_id_map[args.model]
 
     if args.action.startswith('coco'):
         with (Path(args.input_folder) / 'captions_val2014.json').open() as f:
             captions = json.load(f)['annotations']
 
         random.shuffle(captions)
-        captions = captions[:args.gen_limit]
+        new_captions = []
+
         if args.action == 'coco-unreal':
             pos_map = defaultdict(list)
 
@@ -94,7 +79,18 @@ def main():
 
                 print(new_prompt)
 
+            new_prompt = ''.join([tok.text_with_ws for tok in new_tokens])
+            caption['caption'] = new_prompt
+
+            print(new_prompt)
+            new_captions.append(caption)
+
         prompts = [(caption['id'], caption['caption']) for caption in captions]
+    elif args.action == 'stdin':
+        prompts = []
+
+        for idx, line in enumerate(sys.stdin):
+            prompts.append((idx, line.strip()))
     elif args.action == 'template':
         template_df = pd.read_csv(args.template_data_file, sep='\t', quoting=3)
         sample_dict = defaultdict(list)
@@ -144,75 +140,100 @@ def main():
             a2 = 'an' if w2[0] in 'aeiou' else 'a'
             prompt = f'{a1} {w1} and {a2} {w2}'
             prompts.append((prompt_id, prompt))
+    elif args.action == 'quickgen':
+        args.output_folder = '.'
+        prompts = [('.', args.prompt)]
     else:
         prompts = [('prompt', input('> '))]
 
-    if args.study == 'time-ablation':
-        time_indices = [1, 2, 3, 5, 8, 13, 21, args.num_timesteps, -1, -2, -3, -5, -8, -13, -21]
-    else:
-        time_indices = [args.num_timesteps]
+    if args.output_folder is None:
+        args.output_folder = 'output'
 
-    if args.study == 'space-ablation':
-        space_factors = [[1], [1, 2], [1, 2, 4], [1, 2, 4, 8], [2, 4, 8], [4, 8], [8]]
-    else:
-        space_factors = []
+    new_prompts = []
 
-    model_id = 'CompVis/stable-diffusion-v1-4'
-    device = 'cuda'
+    if args.lemma is not None:
+        for prompt_id, prompt in tqdm(prompts):
+            if args.lemma not in prompt.lower():
+                continue
 
+            doc = cached_nlp(prompt)
+            found = False
+
+            for tok in doc:
+                if tok.lemma_.lower() == args.lemma and not found:
+                    found = True
+                elif tok.lemma_.lower() == args.lemma:  # filter out prompts with multiple instances of the word
+                    found = False
+                    break
+
+            if found:
+                new_prompts.append((prompt_id, prompt))
+
+        prompts = new_prompts
+
+    prompts = prompts[:args.gen_limit]
     pipe = StableDiffusionPipeline.from_pretrained(model_id, use_auth_token=True)
-    pipe = pipe.to(device)
-    seed = args.seed
+    pipe = pipe.to('cuda')
 
     with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
         for prompt_id, prompt in tqdm(prompts):
-            # gen = set_seed(seed)  # Uncomment this for seed fix
+            seed = int(time.time()) if args.random_seed else args.seed
+            gen = set_seed(seed)  # Uncomment this for seed fix
+            prompt = prompt.replace(',', ' ,').replace('.', ' .').strip()
 
-            if args.action == 'template' or args.action == 'cconj':
+            if args.action == 'cconj':
                 seed = int(prompt_id.split('-')[1]) + args.seed_offset
                 gen = set_seed(seed)
 
             prompt_id = str(prompt_id)
 
             if args.regenerate and not GenerationExperiment.contains_truth_mask(args.output_folder, prompt_id):
-                # I screwed up with the seed generation so this is a hacky workaround to reproduce the paper. Basically,
-                # we push the state of the generator forward from the same random sampling operation.
-                latents_shape = (1, pipe.unet.in_channels, 512 // 8, 512 // 8)
-                torch.randn(latents_shape, generator=gen, device='cuda')
                 continue
             elif args.regenerate:
                 print(f'Regenerating {prompt_id}')
 
-            with trace(pipe, weighted=False) as tc:
+            with trace(pipe, low_memory=args.low_memory) as tc:
                 out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen)
+                exp = GenerationExperiment(
+                    id=prompt_id,
+                    global_heat_map=tc.compute_global_heat_map(prompt).heat_maps,
+                    seed=seed,
+                    prompt=prompt,
+                    image=out.images[0],
+                    path=Path(args.output_folder)
+                )
+                exp.save(args.output_folder)
 
-                for factors in space_factors:
-                    map_kwargs = dict(factors=factors)
+                if args.all_heads:
+                    exp.clear_checkpoint()
 
-                    exp = GenerationExperiment(
-                        id=prompt_id,
-                        global_heat_map=tc.compute_global_heat_map(prompt, **map_kwargs).heat_maps,
-                        seed=seed,
-                        prompt=prompt,
-                        image=out.images[0],
-                        subtype=f'space{"-".join(map(str, factors))}'
-                    )
+                for word in prompt.split():
+                    if args.lemma is not None and cached_nlp(word)[0].lemma_.lower() != args.lemma:
+                        continue
 
-                    exp.save(args.output_folder)
+                    exp.save_heat_map(pipe.tokenizer, word)
 
-                for time_idx in time_indices:
-                    map_kwargs = dict(first_n=time_idx) if time_idx > 0 else dict(last_n=-time_idx)
+                    if args.all_heads:
+                        for head_idx in range(16):
+                            for layer_idx, layer_name in enumerate(tc.layer_names):
+                                try:
+                                    heat_map = tc.compute_global_heat_map(layer_idx=layer_idx, head_idx=head_idx)
+                                    exp = GenerationExperiment(
+                                        path=Path(args.output_folder),
+                                        id=prompt_id,
+                                        global_heat_map=heat_map.heat_maps,
+                                        seed=seed,
+                                        prompt=prompt,
+                                        image=out.images[0]
+                                    )
 
-                    exp = GenerationExperiment(
-                        id=prompt_id,
-                        global_heat_map=tc.compute_global_heat_map(prompt, **map_kwargs).heat_maps,
-                        seed=seed,
-                        prompt=prompt,
-                        image=out.images[0],
-                        subtype=f'time{time_idx}' if time_idx != args.num_timesteps else '.'
-                    )
-
-                    exp.save(args.output_folder)
+                                    exp.save_heat_map(
+                                        pipe.tokenizer,
+                                        word,
+                                        output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-'
+                                    )
+                                except RuntimeError:
+                                    print(f'Missing ({layer_idx}, {head_idx}, {layer_name})')
 
 
 if __name__ == '__main__':

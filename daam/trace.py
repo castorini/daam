@@ -1,42 +1,18 @@
 from collections import defaultdict
-from copy import deepcopy
-from pathlib import Path
-from typing import List, Type, Any, Literal, Dict
+from typing import List, Type, Any, Dict, Tuple, Set, Union
 import math
 
-from diffusers import UNet2DConditionModel, StableDiffusionPipeline
+from diffusers import StableDiffusionPipeline
 from diffusers.models.attention import CrossAttention
-import numba
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .experiment import COCO80_LABELS
 from .hook import ObjectHooker, AggregateHooker, UNetCrossAttentionLocator
 from .utils import compute_token_merge_indices
 
 
-__all__ = ['trace', 'DiffusionHeatMapHooker', 'HeatMap', 'MmDetectHeatMap']
-
-
-class UNetForwardHooker(ObjectHooker[UNet2DConditionModel]):
-    def __init__(self, module: UNet2DConditionModel, heat_maps: defaultdict):
-        super().__init__(module)
-        self.all_heat_maps = []
-        self.heat_maps = heat_maps
-
-    def _hook_impl(self):
-        self.monkey_patch('forward', self._forward)
-
-    def _unhook_impl(self):
-        pass
-
-    def _forward(hk_self, self, *args, **kwargs):
-        super_return = hk_self.monkey_super('forward', *args, **kwargs)
-        hk_self.all_heat_maps.append(deepcopy(hk_self.heat_maps))
-        hk_self.heat_maps.clear()
-
-        return super_return
+__all__ = ['trace', 'DiffusionHeatMapHooker', 'HeatMap', 'RawHeatMapCollection']
 
 
 class HeatMap:
@@ -50,164 +26,173 @@ class HeatMap:
         return self.heat_maps[merge_idxs].mean(0)
 
 
-class MmDetectHeatMap:
-    def __init__(self, pred_file: str | Path, threshold: float = 0.95):
-        @numba.njit
-        def _compute_mask(masks: np.ndarray, bboxes: np.ndarray):
-            x_any = np.any(masks, axis=1)
-            y_any = np.any(masks, axis=2)
-            num_masks = len(bboxes)
+RawHeatMapKey = Tuple[int, int, int]  # factor, layer, head
 
-            for idx in range(num_masks):
-                x = np.where(x_any[idx, :])[0]
-                y = np.where(y_any[idx, :])[0]
-                bboxes[idx, :4] = np.array([x[0], y[0], x[-1] + 1, y[-1] + 1], dtype=np.float32)
 
-        pred_file = Path(pred_file)
-        self.word_masks: Dict[str, torch.Tensor] = defaultdict(lambda: 0)
-        bbox_result, masks = torch.load(pred_file)
-        labels = [np.full(bbox.shape[0], i, dtype=np.int32) for i, bbox in enumerate(bbox_result)]
-        labels = np.concatenate(labels)
-        bboxes = np.vstack(bbox_result)
+class RawHeatMapCollection:
+    def __init__(self):
+        self.ids_to_heatmaps: Dict[RawHeatMapKey, torch.Tensor] = defaultdict(lambda: 0.0)
+        self.ids_to_num_maps: Dict[RawHeatMapKey, int] = defaultdict(lambda: 0)
 
-        if masks is not None and bboxes[:, :4].sum() == 0:
-            _compute_mask(masks, bboxes)
-            scores = bboxes[:, -1]
-            inds = scores > threshold
-            labels = labels[inds]
-            masks = masks[inds, ...]
+    def update(self, factor: int, layer_idx: int, head_idx: int, heatmap: torch.Tensor):
+        with torch.cuda.amp.autocast(dtype=torch.float32):
+            self.ids_to_heatmaps[(factor, layer_idx, head_idx)] = self.ids_to_heatmaps[(factor, layer_idx, head_idx)] + heatmap
 
-            for lbl, mask in zip(labels, masks):
-                self.word_masks[COCO80_LABELS[lbl]] |= torch.from_numpy(mask)
+    def factors(self) -> Set[int]:
+        return set(key[0] for key in self.ids_to_heatmaps.keys())
 
-            self.word_masks = {k: v.float() for k, v in self.word_masks.items()}
+    def layers(self) -> Set[int]:
+        return set(key[1] for key in self.ids_to_heatmaps.keys())
 
-    def compute_word_heat_map(self, word: str) -> torch.Tensor:
-        return self.word_masks[word]
+    def heads(self) -> Set[int]:
+        return set(key[2] for key in self.ids_to_heatmaps.keys())
+
+    def __iter__(self):
+        return iter(self.ids_to_heatmaps.items())
+
+    def clear(self):
+        self.ids_to_heatmaps.clear()
+        self.ids_to_num_maps.clear()
 
 
 class DiffusionHeatMapHooker(AggregateHooker):
-    def __init__(self, pipeline: StableDiffusionPipeline, weighted: bool = False, layer_idx: int = None, head_idx: int = None):
-        heat_maps = defaultdict(list)
-        modules = [UNetCrossAttentionHooker(x, heat_maps, weighted=weighted, head_idx=head_idx) for x in UNetCrossAttentionLocator().locate(pipeline.unet, layer_idx)]
-        self.forward_hook = UNetForwardHooker(pipeline.unet, heat_maps)
-        modules.append(self.forward_hook)
-        super().__init__(modules)
+    def __init__(self, pipeline: StableDiffusionPipeline, low_memory: bool = False):
+        self.all_heat_maps = RawHeatMapCollection()
+        h = (pipeline.unet.config.sample_size * pipeline.vae_scale_factor)
+        self.latent_hw = 4096 if h == 512 else 9216  # 64x64 or 96x96 depending on if it's 2.0-v or 2.0
+        self.locator = UNetCrossAttentionLocator(restrict={0} if low_memory else None)
+        self.last_prompt: str = ''
 
+        modules = [
+            UNetCrossAttentionHooker(
+                x,
+                self.all_heat_maps,
+                layer_idx=idx,
+                latent_hw=self.latent_hw
+            ) for idx, x in enumerate(self.locator.locate(pipeline.unet))
+        ]
+
+        modules.append(PipelineHooker(pipeline, self))
+
+        super().__init__(modules)
         self.pipe = pipeline
 
     @property
-    def all_heat_maps(self):
-        return self.forward_hook.all_heat_maps
+    def layer_names(self):
+        return self.locator.layer_names
 
-    def compute_global_heat_map(self, prompt, time_weights=None, time_idx=None, last_n=None, first_n=None, factors=None):
-        # type: (str, List[float], int, int, int, List[float]) -> HeatMap
+    def compute_global_heat_map(self, prompt=None, factors=None, head_idx=None, layer_idx=None, normalize=False):
+        # type: (str, List[float], int, int, bool) -> HeatMap
         """
         Compute the global heat map for the given prompt, aggregating across time (inference steps) and space (different
         spatial transformer block heat maps).
 
         Args:
-            prompt: The prompt to compute the heat map for.
-            time_weights: The weights to apply to each time step. If None, all time steps are weighted equally.
-            time_idx: The time step to compute the heat map for. If None, the heat map is computed for all time steps.
-                Mutually exclusive with `last_n` and `first_n`.
-            last_n: The number of last n time steps to use. If None, the heat map is computed for all time steps.
-                Mutually exclusive with `time_idx`.
-            first_n: The number of first n time steps to use. If None, the heat map is computed for all time steps.
-                Mutually exclusive with `time_idx`.
+            prompt: The prompt to compute the heat map for. If none, uses the last prompt that was used for generation.
             factors: Restrict the application to heat maps with spatial factors in this set. If `None`, use all sizes.
+            head_idx: Restrict the application to heat maps with this head index. If `None`, use all heads.
+            layer_idx: Restrict the application to heat maps with this layer index. If `None`, use all layers.
+
+        Returns:
+            A heat map object for computing word-level heat maps.
         """
-        if time_weights is None:
-            time_weights = [1.0] * len(self.forward_hook.all_heat_maps)
+        heat_maps = self.all_heat_maps
 
-        time_weights = np.array(time_weights)
-        time_weights /= time_weights.sum()
-        all_heat_maps = self.forward_hook.all_heat_maps
-
-        if time_idx is not None:
-            heat_maps = [all_heat_maps[time_idx]]
-        else:
-            heat_maps = all_heat_maps[-last_n:] if last_n is not None else all_heat_maps
-            heat_maps = heat_maps[:first_n] if first_n is not None else heat_maps
+        if prompt is None:
+            prompt = self.last_prompt
 
         if factors is None:
-            factors = {1, 2, 4, 8, 16, 32}
+            factors = {0, 1, 2, 4, 8, 16, 32, 64}
         else:
             factors = set(factors)
 
         all_merges = []
+        x = int(np.sqrt(self.latent_hw))
 
-        for factors_to_heat_maps in heat_maps:
-            merge_list = []
+        with torch.cuda.amp.autocast(dtype=torch.float32):
+            for (factor, layer, head), heat_map in heat_maps:
+                if factor in factors and (head_idx is None or head_idx == head) and (layer_idx is None or layer_idx == layer):
+                    heat_map = heat_map.unsqueeze(1)
+                    # The clamping fixes undershoot.
+                    all_merges.append(F.interpolate(heat_map, size=(x, x), mode='bicubic').clamp_(min=0))
 
-            for k, heat_map in factors_to_heat_maps.items():
-                # heat_map shape: (tokens, 1, height, width)
-                # each v is a heat map tensor for a layer of factor size k across the tokens
-                if k in factors:
-                    merge_list.append(torch.stack(heat_map, 0).mean(0))
+            maps = torch.stack(all_merges, dim=0)
+            maps = maps.mean(0)[:, 0]
+            maps = maps[:len(self.pipe.tokenizer.tokenize(prompt)) + 2]  # 1 for SOS and 1 for padding
 
-            all_merges.append(merge_list)
-
-        maps = torch.stack([torch.stack(x, 0) for x in all_merges], dim=0)
-        maps = maps.sum(0).cuda().sum(2).sum(0)
+            if normalize:
+                maps = maps / (maps[1:-1].sum(0, keepdim=True) + 1e-6)  # drop out [SOS] and [PAD] for proper probabilities
 
         return HeatMap(self.pipe.tokenizer, prompt, maps)
 
 
+class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
+    def __init__(self, pipeline: StableDiffusionPipeline, parent_trace: 'trace'):
+        super().__init__(pipeline)
+        self.heat_maps = parent_trace.all_heat_maps
+        self.parent_trace = parent_trace
+
+    def _hooked_call(hk_self, self, prompt: Union[str, List[str]], *args, **kwargs):
+        if not isinstance(prompt, str) and len(prompt) > 1:
+            raise ValueError('Only single prompt generation is supported for heat map computation.')
+        elif not isinstance(prompt, str):
+            last_prompt = prompt[0]
+        else:
+            last_prompt = prompt
+
+        hk_self.heat_maps.clear()
+        hk_self.parent_trace.last_prompt = last_prompt
+        ret = hk_self.monkey_super('__call__', prompt, *args, **kwargs)
+
+        return ret
+
+    def _hook_impl(self):
+        self.monkey_patch('__call__', self._hooked_call)
+
+
 class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
-    def __init__(self, module: CrossAttention, heat_maps: defaultdict, context_size: int = 77, weighted: bool = False, head_idx: int = 0):
+    def __init__(
+            self,
+            module: CrossAttention,
+            heat_maps: 'RawHeatMapCollection',
+            context_size: int = 77,
+            layer_idx: int = 0,
+            latent_hw: int = 9216
+    ):
         super().__init__(module)
         self.heat_maps = heat_maps
         self.context_size = context_size
-        self.weighted = weighted
-        self.head_idx = head_idx
+        self.layer_idx = layer_idx
+        self.latent_hw = latent_hw
 
     @torch.no_grad()
-    def _up_sample_attn(self, x, value, factor, method='bicubic'):
-        # type: (torch.Tensor, torch.Tensor, int, Literal['bicubic', 'conv']) -> torch.Tensor
+    def _unravel_attn(self, x):
+        # type: (torch.Tensor) -> torch.Tensor
         # x shape: (heads, height * width, tokens)
         """
-        Up samples the attention map in x using interpolation to the maximum size of (64, 64), as assumed in the Stable
-        Diffusion model.
+        Unravels the attention, returning it as a collection of heat maps.
 
         Args:
             x (`torch.Tensor`): cross attention slice/map between the words and the tokens.
             value (`torch.Tensor`): the value tensor.
-            method (`str`): the method to use; one of `'bicubic'` or `'conv'`.
 
         Returns:
-            `torch.Tensor`: the up-sampled attention map of shape (tokens, 1, height, width).
+            `List[Tuple[int, torch.Tensor]]`: the list of heat maps across heads.
         """
-        weight = torch.full((factor, factor), 1 / factor ** 2, device=x.device)
-        weight = weight.view(1, 1, factor, factor)
-
         h = w = int(math.sqrt(x.size(1)))
         maps = []
         x = x.permute(2, 0, 1)
-        value = value.permute(1, 0, 2)
-        weights = 1
 
         with torch.cuda.amp.autocast(dtype=torch.float32):
             for map_ in x:
-                map_ = map_.unsqueeze(1).view(map_.size(0), 1, h, w)
-
-                if method == 'bicubic':
-                    map_ = F.interpolate(map_, size=(64, 64), mode='bicubic')
-                    maps.append(map_.squeeze(1))
-                else:
-                    maps.append(F.conv_transpose2d(map_, weight, stride=factor).squeeze(1))
-
-        if self.weighted:
-            weights = value.norm(p=1, dim=-1, keepdim=True).unsqueeze(-1)
+                map_ = map_.view(map_.size(0), h, w)
+                map_ = map_[map_.size(0) // 2:]  # Filter out unconditional
+                maps.append(map_)
 
         maps = torch.stack(maps, 0)  # shape: (tokens, heads, height, width)
-        
-        if self.head_idx:
-            maps = maps[:, self.head_idx:self.head_idx+1, :, :]
+        return maps.permute(1, 0, 2, 3).contiguous()  # shape: (heads, tokens, height, width)
 
-        return (weights * maps).sum(1, keepdim=True).cpu()
-
-    def _hooked_attention(hk_self, self, query, key, value, sequence_length, dim, use_context: bool = True):
+    def _hooked_attention(hk_self, self, query, key, value):
         """
         Monkey-patched version of :py:func:`.CrossAttention._attention` to capture attentions and aggregate them.
 
@@ -217,30 +202,27 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
             query (`torch.Tensor`): the query tensor.
             key (`torch.Tensor`): the key tensor.
             value (`torch.Tensor`): the value tensor.
-            use_context (`bool`): whether to check if the resulting attention slices are between the words and the image
         """
-        batch_size_attention = query.shape[0]
-        hidden_states = torch.zeros(
-            (batch_size_attention, sequence_length, dim // self.heads), device=query.device, dtype=query.dtype
+
+        attention_scores = torch.baddbmm(
+            torch.empty(query.shape[0], query.shape[1], key.shape[1], dtype=query.dtype, device=query.device),
+            query,
+            key.transpose(-1, -2),
+            beta=0,
+            alpha=self.scale,
         )
-        slice_size = self._slice_size if self._slice_size is not None else hidden_states.shape[0]
-        for i in range(hidden_states.shape[0] // slice_size):
-            start_idx = i * slice_size
-            end_idx = (i + 1) * slice_size
-            attn_slice = (
-                    torch.einsum("b i d, b j d -> b i j", query[start_idx:end_idx], key[start_idx:end_idx]) * self.scale
-            )
-            factor = int(math.sqrt(4096 // attn_slice.shape[1]))
-            attn_slice = attn_slice.softmax(-1)
-            hid_states = torch.einsum("b i j, b j d -> b i d", attn_slice, value[start_idx:end_idx])
+        attn_slice = attention_scores.softmax(dim=-1)
+        factor = int(math.sqrt(hk_self.latent_hw // attn_slice.shape[1]))
 
-            if use_context and attn_slice.shape[-1] == hk_self.context_size:
-                if factor >= 1: # shape: (batch_size, 64 // factor, 64 // factor, 77)
-                    factor //= 1
-                    maps = hk_self._up_sample_attn(attn_slice, value, factor)
-                    hk_self.heat_maps[factor].append(maps)
+        if attn_slice.shape[-1] == hk_self.context_size:
+            # shape: (batch_size, 64 // factor, 64 // factor, 77)
+            maps = hk_self._unravel_attn(attn_slice)
 
-            hidden_states[start_idx:end_idx] = hid_states
+            for head_idx, heatmap in enumerate(maps):
+                hk_self.heat_maps.update(factor, hk_self.layer_idx, head_idx, heatmap)
+
+        # compute attention output
+        hidden_states = torch.bmm(attn_slice, value)
 
         # reshape hidden_states
         hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
