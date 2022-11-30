@@ -31,7 +31,7 @@ You can see more options for `daam` by running `daam -h`.
 
 ## Using DAAM as a Library
 
-First, install [PyTorch <= 1.12.1](https://pytorch.org) for your platform.
+First, install [PyTorch <= 1.13.0](https://pytorch.org) for your platform.
 Then, install DAAM with `pip install daam`. If you want an editable version, then do `git clone https://github.com/castorini/daam && pip install -e daam`.
 
 Using DAAM as a library is easy.
