@@ -63,6 +63,19 @@ with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
         plt.show()
 ```
 
+You can also serialize and deserialize the DAAM maps pretty easily:
+
+```python
+from daam import GenerationExperiment, trace
+
+with trace(pipe) as tc:
+    pipe('A dog and a cat')
+    exp = tc.to_experiment('experiment-dir')
+    exp.save()  # experiment-dir now contains all the data and heat maps
+
+exp = GenerationExperiment.load('experiment-dir')  # load the experiment
+```
+
 We'll continue adding docs.
 In the meantime, check out the `GenerationExperiment`, `HeatMap`, and `DiffusionHeatMapHooker` classes, as well as the `daam/run/*.py` example scripts.
 Our datasets are here: https://git.uwaterloo.ca/r33tang/daam-data

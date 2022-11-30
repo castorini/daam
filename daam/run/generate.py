@@ -141,7 +141,9 @@ def main():
             prompt = f'{a1} {w1} and {a2} {w2}'
             prompts.append((prompt_id, prompt))
     elif args.action == 'quickgen':
-        args.output_folder = '.'
+        if args.output_folder is None:
+            args.output_folder = '.'
+
         prompts = [('.', args.prompt)]
     else:
         prompts = [('prompt', input('> '))]
@@ -194,15 +196,8 @@ def main():
 
             with trace(pipe, low_memory=args.low_memory) as tc:
                 out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen)
-                exp = GenerationExperiment(
-                    id=prompt_id,
-                    global_heat_map=tc.compute_global_heat_map().heat_maps,
-                    seed=seed,
-                    prompt=prompt,
-                    image=out.images[0],
-                    path=Path(args.output_folder)
-                )
-                exp.save(args.output_folder)
+                exp = tc.to_experiment(args.output_folder, id=prompt_id, seed=seed)
+                exp.save(args.output_folder, heat_maps=args.action == 'quickgen')
 
                 if args.all_heads:
                     exp.clear_checkpoint()
@@ -211,7 +206,7 @@ def main():
                     if args.lemma is not None and cached_nlp(word)[0].lemma_.lower() != args.lemma:
                         continue
 
-                    exp.save_heat_map(pipe.tokenizer, word)
+                    exp.save_heat_map(word)
 
                     if args.all_heads:
                         for head_idx in range(16):
@@ -227,11 +222,7 @@ def main():
                                         image=out.images[0]
                                     )
 
-                                    exp.save_heat_map(
-                                        pipe.tokenizer,
-                                        word,
-                                        output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-'
-                                    )
+                                    exp.save_heat_map(word, output_prefix=f'l{layer_idx}-{layer_name}-h{head_idx}-')
                                 except RuntimeError:
                                     print(f'Missing ({layer_idx}, {head_idx}, {layer_name})')
 

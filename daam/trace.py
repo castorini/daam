@@ -65,6 +65,7 @@ class DiffusionHeatMapHooker(AggregateHooker):
         self.latent_hw = 4096 if h == 512 else 9216  # 64x64 or 96x96 depending on if it's 2.0-v or 2.0
         self.locator = UNetCrossAttentionLocator(restrict={0} if low_memory else None)
         self.last_prompt: str = ''
+        self.last_image: Image = None
 
         modules = [
             UNetCrossAttentionHooker(
@@ -83,6 +84,21 @@ class DiffusionHeatMapHooker(AggregateHooker):
     @property
     def layer_names(self):
         return self.locator.layer_names
+
+    def to_experiment(self, path, seed=None, id='.', subtype='.', **compute_kwargs):
+        # type: (Union[Path, str], int, str, str, Dict[str, Any]) -> GenerationExperiment
+        """Exports the last generation call to a serializable generation experiment."""
+
+        return GenerationExperiment(
+            self.last_image,
+            self.compute_global_heat_map(**compute_kwargs).heat_maps,
+            self.last_prompt,
+            seed=seed,
+            id=id,
+            subtype=subtype,
+            path=path,
+            tokenizer=self.pipe.tokenizer,
+        )
 
     def compute_global_heat_map(self, prompt=None, factors=None, head_idx=None, layer_idx=None, normalize=False):
         # type: (str, List[float], int, int, bool) -> HeatMap
@@ -142,7 +158,14 @@ class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
         self.heat_maps = parent_trace.all_heat_maps
         self.parent_trace = parent_trace
 
-    def _hooked_encode_prompt(hk_self, self, prompt: Union[str, List[str]], *args, **kwargs):
+    def _hooked_run_safety_checker(hk_self, self: StableDiffusionPipeline, image, *args, **kwargs):
+        image, has_nsfw = hk_self.monkey_super('run_safety_checker', image, *args, **kwargs)
+        pil_image = self.numpy_to_pil(image)
+        hk_self.parent_trace.last_image = pil_image[0]
+
+        return image, has_nsfw
+
+    def _hooked_encode_prompt(hk_self, _: StableDiffusionPipeline, prompt: Union[str, List[str]], *args, **kwargs):
         if not isinstance(prompt, str) and len(prompt) > 1:
             raise ValueError('Only single prompt generation is supported for heat map computation.')
         elif not isinstance(prompt, str):
@@ -157,6 +180,7 @@ class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
         return ret
 
     def _hook_impl(self):
+        self.monkey_patch('run_safety_checker', self._hooked_run_safety_checker)
         self.monkey_patch('_encode_prompt', self._hooked_encode_prompt)
 
 

@@ -104,23 +104,31 @@ class GenerationExperiment:
     """Class to hold experiment parameters. Pickleable."""
     image: PIL.Image.Image
     global_heat_map: torch.Tensor
-    seed: int
     prompt: str
 
+    seed: int = None
     id: str = '.'
     path: Optional[Path] = None
+
     truth_masks: Optional[Dict[str, torch.Tensor]] = None
     prediction_masks: Optional[Dict[str, torch.Tensor]] = None
     annotations: Optional[Dict[str, Any]] = None
     subtype: Optional[str] = '.'
+    tokenizer: AutoTokenizer = None
 
     def __post_init__(self):
+        if isinstance(self.path, str):
+            self.path = Path(self.path)
+
         self.path = None if self.path is None else self.path / self.id
 
     def nsfw(self) -> bool:
         return np.sum(np.array(self.image)) == 0
 
-    def heat_map(self, tokenizer: AutoTokenizer):
+    def heat_map(self, tokenizer: AutoTokenizer = None):
+        if tokenizer is None:
+            tokenizer = self.tokenizer
+
         from daam import HeatMap
         return HeatMap(tokenizer, self.prompt, self.global_heat_map)
 
@@ -129,11 +137,14 @@ class GenerationExperiment:
 
         (path / 'generation.pt').unlink(missing_ok=True)
 
-    def save(self, path: str = None):
+    def save(self, path: str = None, heat_maps: bool = True, tokenizer: AutoTokenizer = None):
         if path is None:
             path = self.path
         else:
             path = Path(path) / self.id
+
+        if tokenizer is None:
+            tokenizer = self.tokenizer
 
         (path / self.subtype).mkdir(parents=True, exist_ok=True)
         torch.save(self, path / self.subtype / 'generation.pt')
@@ -149,6 +160,9 @@ class GenerationExperiment:
             for name, mask in self.truth_masks.items():
                 im = PIL.Image.fromarray((mask * 255).unsqueeze(-1).expand(-1, -1, 4).byte().numpy())
                 im.save(path / f'{name.lower()}.gt.png')
+
+        if heat_maps and tokenizer is not None:
+            self.save_all_heat_maps(tokenizer)
 
         self.save_annotations()
 
@@ -209,13 +223,16 @@ class GenerationExperiment:
 
     def save_heat_map(
             self,
-            tokenizer: PreTrainedTokenizer,
             word: str,
+            tokenizer: PreTrainedTokenizer = None,
             crop: int = None,
             output_prefix: str = '',
             absolute: bool = False
     ) -> Path:
         from .trace import HeatMap  # because of cyclical import
+
+        if tokenizer is None:
+            tokenizer = self.tokenizer
 
         with torch.cuda.amp.autocast(dtype=torch.float32):
             heat_map = HeatMap(tokenizer, self.prompt, self.global_heat_map)
@@ -225,12 +242,15 @@ class GenerationExperiment:
 
         return path
 
-    def save_all_heat_maps(self, tokenizer: PreTrainedTokenizer, crop: int = None) -> Dict[str, Path]:
+    def save_all_heat_maps(self, tokenizer: PreTrainedTokenizer = None, crop: int = None) -> Dict[str, Path]:
         path_map = {}
+
+        if tokenizer is None:
+            tokenizer = self.tokenizer
 
         for word in self.prompt.split(' '):
             try:
-                path = self.save_heat_map(tokenizer, word, crop=crop)
+                path = self.save_heat_map(word, tokenizer, crop=crop)
                 path_map[word] = path
             except:
                 pass
