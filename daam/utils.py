@@ -10,7 +10,8 @@ import torch
 import torch.nn.functional as F
 
 
-__all__ = ['expand_image', 'set_seed', 'compute_token_merge_indices', 'plot_overlay_heat_map', 'plot_mask_heat_map']
+__all__ = ['expand_image', 'set_seed', 'compute_token_merge_indices', 'plot_overlay_heat_map', 'plot_mask_heat_map',
+           'cached_nlp']
 
 
 def expand_image(im: torch.Tensor, out: int = 512, absolute: bool = False, threshold: float = None) -> torch.Tensor:

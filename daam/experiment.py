@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from dataclasses import dataclass
 import json
 
@@ -10,6 +10,7 @@ import torch
 
 from .evaluate import load_mask
 from .utils import plot_overlay_heat_map, expand_image
+
 
 __all__ = ['GenerationExperiment', 'COCO80_LABELS', 'COCOSTUFF27_LABELS', 'COCO80_INDICES', 'build_word_list_coco80']
 
@@ -115,7 +116,6 @@ class GenerationExperiment:
 
     def __post_init__(self):
         self.path = None if self.path is None else self.path / self.id
-        self.image = self.image.resize((512, 512))
 
     def nsfw(self) -> bool:
         return np.sum(np.array(self.image)) == 0
@@ -219,7 +219,7 @@ class GenerationExperiment:
 
         with torch.cuda.amp.autocast(dtype=torch.float32):
             heat_map = HeatMap(tokenizer, self.prompt, self.global_heat_map)
-            heat_map = expand_image(heat_map.compute_word_heat_map(word), absolute=absolute)
+            heat_map = expand_image(heat_map.compute_word_heat_map(word), absolute=absolute, out=self.image.size[0])
             path = self.path / self.subtype / f'{output_prefix}{word.lower()}.heat_map.png'
             plot_overlay_heat_map(self.image, heat_map, word, path, crop=crop, color_normalize=not absolute)
 
@@ -238,29 +238,29 @@ class GenerationExperiment:
         return path_map
 
     @staticmethod
-    def contains_truth_mask(path: str | Path, prompt_id: str = None) -> bool:
+    def contains_truth_mask(path: Union[str, Path], prompt_id: str = None) -> bool:
         if prompt_id is None:
             return any(Path(path).glob('*.gt.png'))
         else:
             return any((Path(path) / prompt_id).glob('*.gt.png'))
 
     @staticmethod
-    def read_seed(path: str | Path, prompt_id: str = None) -> int:
+    def read_seed(path: Union[str, Path], prompt_id: str = None) -> int:
         if prompt_id is None:
             return int(Path(path).joinpath('seed.txt').read_text())
         else:
             return int(Path(path).joinpath(prompt_id).joinpath('seed.txt').read_text())
 
     @staticmethod
-    def has_annotations(path: str | Path) -> bool:
+    def has_annotations(path: Union[str, Path]) -> bool:
         return Path(path).joinpath('annotations.json').exists()
 
     @staticmethod
-    def has_experiment(path: str | Path, prompt_id: str) -> bool:
+    def has_experiment(path: Union[str, Path], prompt_id: str) -> bool:
         return (Path(path) / prompt_id / 'generation.pt').exists()
 
     @staticmethod
-    def read_prompt(path: str | Path, prompt_id: str = None) -> str:
+    def read_prompt(path: Union[str, Path], prompt_id: str = None) -> str:
         if prompt_id is None:
             prompt_id = '.'
 
