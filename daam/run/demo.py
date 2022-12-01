@@ -1,6 +1,7 @@
 import math
 from threading import Lock
 from typing import Any, List
+import argparse
 
 import numpy as np
 from diffusers import StableDiffusionPipeline
@@ -20,7 +21,7 @@ def get_tokenizing_mapping(prompt: str, tokenizer: Any) -> List[List[int]]:
     curr_word = ''
 
     for i, token in enumerate(tokens):
-        curr_idxs.append(i+1)  # because of the [CLS] token
+        curr_idxs.append(i + 1)  # because of the [CLS] token
         curr_word += token
         if '</w>' in token:
             merge_idxs.append(curr_idxs)
@@ -31,18 +32,34 @@ def get_tokenizing_mapping(prompt: str, tokenizer: Any) -> List[List[int]]:
     return merge_idxs, words
 
 
-def main():
-    # argparse?
+def get_args():
+    model_id_map = {
+        'v1': 'runwayml/stable-diffusion-v1-5',
+        'v2-base': 'stabilityai/stable-diffusion-2-base',
+        'v2-large': 'stabilityai/stable-diffusion-2'
+    }
 
-    model_id = "stabilityai/stable-diffusion-2-base"
-    device = "cuda"
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', '-m', type=str, default='v2-base', choices=list(model_id_map.keys()), help="which diffusion model to use")
+    parser.add_argument('--seed', '-s', type=int, default=0, help="the random seed")
+    parser.add_argument('--port', '-p', type=int, default=8080, help="the port to launch the demo")
+    parser.add_argument('--no-cuda', action='store_true', help="Use CPUs instead of GPUs")
+    args = parser.parse_args()
+    args.model = model_id_map[args.model]
+    return args
+
+
+def main():
+    args = get_args()
+
+    device = "cpu" if args.no_cuda else "cuda"
     pipe = StableDiffusionPipeline.from_pretrained(
-        model_id, use_auth_token=True,
+        args.model, use_auth_token=True,
     ).to(device)
     lock = Lock()
 
     @torch.no_grad()
-    def predict(prompt, inf_steps, threshold):
+    def plot(prompt, inf_steps, threshold):
         merge_idxs, words = get_tokenizing_mapping(prompt, pipe.tokenizer)
         with torch.cuda.amp.autocast(dtype=torch.float16), lock:
             try:
@@ -50,25 +67,24 @@ def main():
             except:
                 pass
 
-            gen = set_seed(0)
-            with trace(pipe) as tc:  # low memory?
+            gen = set_seed(args.seed)
+            with trace(pipe) as tc:
                 out = pipe(prompt, num_inference_steps=inf_steps, generator=gen)
                 image = np.array(out.images[0]) / 255
                 global_heat_maps = tc.compute_global_heat_map(prompt).heat_maps
 
+        # the main image
+        fig, ax = plt.subplots()
+        ax.imshow(image)
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        # the heat maps
+        fig_soft, axs_soft = plt.subplots(math.ceil(len(words) / 4), 4)
+        fig_hard, axs_hard = plt.subplots(math.ceil(len(words) / 4), 4)
+        axs_soft = axs_soft.flatten()
+        axs_hard = axs_hard.flatten()
         with torch.cuda.amp.autocast(dtype=torch.float32):
-            # the main image
-            fig, ax = plt.subplots()
-            ax.imshow(image)
-            ax.set_xticks([])
-            ax.set_yticks([])
-
-            # the heat maps
-            fig_soft, axs_soft = plt.subplots(math.ceil(len(words) / 4), 4)
-            fig_hard, axs_hard = plt.subplots(math.ceil(len(words) / 4), 4)
-            axs_soft = axs_soft.flatten()
-            axs_hard = axs_hard.flatten()
-
             for w_idx, word in enumerate(words):
                 word_heat_map = expand_image(
                     global_heat_maps[merge_idxs[w_idx]].mean(0),
@@ -138,7 +154,7 @@ def main():
                 p2 = gr.Plot()
             
             submit_btn.click(
-                fn=predict,
+                fn=plot,
                 inputs=[text, slider1, slider2],
                 outputs=[p0, p1, p2])
             dropdown.change(lambda prompt: prompt, dropdown, text)
@@ -146,7 +162,7 @@ def main():
 
     while True:
         try:
-            demo.launch(server_name='0.0.0.0', server_port=8080)
+            demo.launch(server_name='0.0.0.0', server_port=args.port)
         except OSError:
             gr.close_all()
         except KeyboardInterrupt:
