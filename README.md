@@ -23,8 +23,8 @@ Now, try running
 $ mkdir -p daam-test && cd daam-test
 $ daam "A dog running across the field."
 $ ls
-a.heat_map.png    generation.pt         output.png  seed.txt
-dog.heat_map.png  jumping.heat_map.png  prompt.txt
+a.heat_map.png    field.heat_map.png    generation.pt   output.png  seed.txt
+dog.heat_map.png  running.heat_map.png  prompt.txt
 ```
 Your current working directory will now contain the generated image as `output.png` and a DAAM map for every word, as well as some auxiliary data.
 You can see more options for `daam` by running `daam -h`.
