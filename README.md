@@ -18,6 +18,7 @@ See [1littlecoder's video](https://www.youtube.com/watch?v=J2WtkA1Xfew) for a co
 DAAM comes with a simple generation script for people who want to quickly try it out.
 First, install [PyTorch](https://pytorch.org) for your platform.
 Then, install DAAM with `pip install daam`.
+Next, login using `huggingface-cli login` to get many stable diffusion models -- you'll need to get a token at [HuggingFace.co](https://huggingface.co/).
 Now, try running
 ```bash
 $ mkdir -p daam-test && cd daam-test
