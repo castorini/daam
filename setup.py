@@ -14,6 +14,7 @@ setuptools.setup(
     entry_points={
         'console_scripts': [
             'daam = daam.run.generate:main',
+            'daam-demo = daam.run.demo:main',
         ]
     }
 )
