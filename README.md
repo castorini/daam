@@ -18,11 +18,11 @@ First, install [PyTorch](https://pytorch.org) for your platform.
 Then, install DAAM with `pip install daam`, unless you want an editable version of the library, in which case do `git clone https://github.com/castorini/daam && pip install -e daam`.
 Finally, login using `huggingface-cli login` to get many stable diffusion models -- you'll need to get a token at [HuggingFace.co](https://huggingface.co/).
 
-## Running the Website Demo
+### Running the Website Demo
 Simply run `daam-demo` in a shell and navigate to http://localhost:8080.
 The same demo as the one on HuggingFace Spaces will show up.
 
-## Using DAAM as a CLI Utility
+### Using DAAM as a CLI Utility
 DAAM comes with a simple generation script for people who want to quickly try it out.
 Try running
 ```bash
@@ -35,7 +35,7 @@ dog.heat_map.png  running.heat_map.png  prompt.txt
 Your current working directory will now contain the generated image as `output.png` and a DAAM map for every word, as well as some auxiliary data.
 You can see more options for `daam` by running `daam -h`.
 
-## Using DAAM as a Library
+### Using DAAM as a Library
 
 Import and use DAAM as follows:
 
