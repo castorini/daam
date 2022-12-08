@@ -49,45 +49,41 @@ def cache_dir() -> Path:
         return Path(local, 'daam')
 
 
-def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int = None, offset_idx: int = 0):
-    prompt = prompt.lower()
-    tokens = tokenizer.tokenize(prompt)
-    word = word.lower()
+def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int = None):
     merge_idxs = []
-    curr_idx = 0
-    curr_token = ''
 
     if word_idx is None:
-        try:
-            word_idx = prompt.split().index(word, offset_idx)
-        except:
-            for punct in ('.', ',', '!', '?'):
-                try:
-                    word_idx = prompt.split().index(word + punct)
-                    break
-                except:
-                    pass
+        prompt = prompt.lower()
+        search_tokens = tokenizer.tokenize(word)
+        punc_tokens = [p + '</w>' for p in string.punctuation]
+        # compute the tokens for each word
+        word_tokens = [tokenizer.tokenize(word) for word in prompt.split()]
 
-    if word_idx is None:
-        raise ValueError(f'Couldn\'t find "{word}" in "{prompt}"')
+        # calculate the token position from the word position
+        def calc_token_positions(end_idx, token_len):
+            slice = word_tokens[:end_idx]
+            first_pos = 0
+            for word_token in slice:
+                first_pos += len(word_token)
 
-    for idx, token in enumerate(tokens):
-        merge_idxs.append(idx)
+            # merge together all tokens in the word
+            return [first_pos + i for i in range(0, token_len)]
 
-        if '</w>' in token:
-            curr_token += token[:-4]
 
-            if idx >= word_idx and curr_token == word:
-                break
+        for idx, w_token in enumerate(word_tokens):
+            # if the word contains more than one token
+            if len(w_token) > len(search_tokens):
+                # check to see if the extra tokens were from punctuation
+                no_punc = [t for t in w_token if t not in punc_tokens]
+                if no_punc and no_punc == search_tokens:
+                    merge_idxs += calc_token_positions(idx, len(search_tokens))
+            elif w_token == search_tokens:
+                merge_idxs += calc_token_positions(idx, len(search_tokens))
+    else:
+        merge_idxs.append(word_idx)
 
-            curr_token = ''
-            curr_idx += 1
-            merge_idxs.clear()
-        else:
-            curr_token += token
-            merge_idxs.append(idx)
-
-    return [x + 1 for x in merge_idxs], word_idx  # Offset by 1.
+    # offset indices by one
+    return [x + 1 for x in merge_idxs]
 
 
 nlp = None
