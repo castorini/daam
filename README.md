@@ -85,7 +85,7 @@ Our datasets are here: https://git.uwaterloo.ca/r33tang/daam-data
 ```
 @article{tang2022daam,
   title={What the {DAAM}: Interpreting Stable Diffusion Using Cross Attention},
-  author={Tang, Raphael and Pandey, Akshat and Jiang, Zhiying and Yang, Gefei and Kumar, Karun and Lin, Jimmy and Ture, Ferhan},
+  author={Tang, Raphael and Liu, Linqing and Pandey, Akshat and Jiang, Zhiying and Yang, Gefei and Kumar, Karun and Stenetorp, Pontus and Lin, Jimmy and Ture, Ferhan},
   journal={arXiv:2210.04885},
   year={2022}
 }
