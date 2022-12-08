@@ -1,4 +1,3 @@
-stanza
 scikit-image
 diffusers==0.9.0
 spacy
