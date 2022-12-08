@@ -13,13 +13,18 @@ Check out our demo: https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-At
 Our [documentation](https://castorini.github.io/daam/) is hosted by GitHub pages.
 See [1littlecoder's video](https://www.youtube.com/watch?v=J2WtkA1Xfew) for a code demonstration and Colab notebook of DAAM.
 
-## Using DAAM as a CLI Utility
-
-DAAM comes with a simple generation script for people who want to quickly try it out.
+## Getting Started
 First, install [PyTorch](https://pytorch.org) for your platform.
-Then, install DAAM with `pip install daam`.
-Next, login using `huggingface-cli login` to get many stable diffusion models -- you'll need to get a token at [HuggingFace.co](https://huggingface.co/).
-Now, try running
+Then, install DAAM with `pip install daam`, unless you want an editable version of the library, in which case do `git clone https://github.com/castorini/daam && pip install -e daam`.
+Finally, login using `huggingface-cli login` to get many stable diffusion models -- you'll need to get a token at [HuggingFace.co](https://huggingface.co/).
+
+## Running the Website Demo
+Simply run `daam-demo` in a shell and navigate to http://localhost:8080.
+The same demo as the one on HuggingFace Spaces will show up.
+
+## Using DAAM as a CLI Utility
+DAAM comes with a simple generation script for people who want to quickly try it out.
+Try running
 ```bash
 $ mkdir -p daam-test && cd daam-test
 $ daam "A dog running across the field."
@@ -32,12 +37,7 @@ You can see more options for `daam` by running `daam -h`.
 
 ## Using DAAM as a Library
 
-First, install [PyTorch <= 1.13.0](https://pytorch.org) for your platform.
-Then, install DAAM with `pip install daam`. If you want an editable version, then do `git clone https://github.com/castorini/daam && pip install -e daam`.
-
-Using DAAM as a library is easy.
-You'll first need to login using `huggingface-cli login` to get many stable diffusion models.
-Next, import and call DAAM as follows:
+Import and use DAAM as follows:
 
 ```python
 from daam import trace, set_seed
