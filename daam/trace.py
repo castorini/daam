@@ -1,6 +1,5 @@
-from collections import defaultdict
 from pathlib import Path
-from typing import List, Type, Any, Dict, Tuple, Set, Union
+from typing import List, Type, Any, Dict, Tuple, Union
 import math
 
 from diffusers import StableDiffusionPipeline
@@ -10,69 +9,44 @@ import PIL.Image as Image
 import torch
 import torch.nn.functional as F
 
+from . import cache_dir
 from .experiment import GenerationExperiment
+from .heatmap import RawHeatMapCollection, GlobalHeatMap
 from .hook import ObjectHooker, AggregateHooker, UNetCrossAttentionLocator
-from .utils import compute_token_merge_indices
 
 
-__all__ = ['trace', 'DiffusionHeatMapHooker', 'HeatMap', 'RawHeatMapCollection']
-
-
-class HeatMap:
-    def __init__(self, tokenizer: Any, prompt: str, heat_maps: torch.Tensor):
-        self.tokenizer = tokenizer
-        self.heat_maps = heat_maps
-        self.prompt = prompt
-
-    def compute_word_heat_map(self, word: str, word_idx: int = None) -> torch.Tensor:
-        merge_idxs = compute_token_merge_indices(self.tokenizer, self.prompt, word, word_idx)
-        return self.heat_maps[merge_idxs].mean(0)
-
-
-RawHeatMapKey = Tuple[int, int, int]  # factor, layer, head
-
-
-class RawHeatMapCollection:
-    def __init__(self):
-        self.ids_to_heatmaps: Dict[RawHeatMapKey, torch.Tensor] = defaultdict(lambda: 0.0)
-        self.ids_to_num_maps: Dict[RawHeatMapKey, int] = defaultdict(lambda: 0)
-
-    def update(self, factor: int, layer_idx: int, head_idx: int, heatmap: torch.Tensor):
-        with torch.cuda.amp.autocast(dtype=torch.float32):
-            self.ids_to_heatmaps[(factor, layer_idx, head_idx)] = self.ids_to_heatmaps[(factor, layer_idx, head_idx)] + heatmap
-
-    def factors(self) -> Set[int]:
-        return set(key[0] for key in self.ids_to_heatmaps.keys())
-
-    def layers(self) -> Set[int]:
-        return set(key[1] for key in self.ids_to_heatmaps.keys())
-
-    def heads(self) -> Set[int]:
-        return set(key[2] for key in self.ids_to_heatmaps.keys())
-
-    def __iter__(self):
-        return iter(self.ids_to_heatmaps.items())
-
-    def clear(self):
-        self.ids_to_heatmaps.clear()
-        self.ids_to_num_maps.clear()
+__all__ = ['trace', 'DiffusionHeatMapHooker', 'GlobalHeatMap']
 
 
 class DiffusionHeatMapHooker(AggregateHooker):
-    def __init__(self, pipeline: StableDiffusionPipeline, low_memory: bool = False):
+    def __init__(
+            self,
+            pipeline:
+            StableDiffusionPipeline,
+            low_memory: bool = False,
+            load_heads: bool = False,
+            save_heads: bool = False,
+            data_dir: str = None
+    ):
         self.all_heat_maps = RawHeatMapCollection()
         h = (pipeline.unet.config.sample_size * pipeline.vae_scale_factor)
         self.latent_hw = 4096 if h == 512 else 9216  # 64x64 or 96x96 depending on if it's 2.0-v or 2.0
-        self.locator = UNetCrossAttentionLocator(restrict={0} if low_memory else None)
+        locate_middle = load_heads or save_heads
+        self.locator = UNetCrossAttentionLocator(restrict={0} if low_memory else None, locate_middle_block=locate_middle)
         self.last_prompt: str = ''
         self.last_image: Image = None
+        self.time_idx = 0
+        self._gen_idx = 0
 
         modules = [
             UNetCrossAttentionHooker(
                 x,
-                self.all_heat_maps,
+                self,
                 layer_idx=idx,
-                latent_hw=self.latent_hw
+                latent_hw=self.latent_hw,
+                load_heads=load_heads,
+                save_heads=save_heads,
+                data_dir=data_dir
             ) for idx, x in enumerate(self.locator.locate(pipeline.unet))
         ]
 
@@ -80,6 +54,9 @@ class DiffusionHeatMapHooker(AggregateHooker):
 
         super().__init__(modules)
         self.pipe = pipeline
+
+    def time_callback(self, *args, **kwargs):
+        self.time_idx += 1
 
     @property
     def layer_names(self):
@@ -101,7 +78,7 @@ class DiffusionHeatMapHooker(AggregateHooker):
         )
 
     def compute_global_heat_map(self, prompt=None, factors=None, head_idx=None, layer_idx=None, normalize=False):
-        # type: (str, List[float], int, int, bool) -> HeatMap
+        # type: (str, List[float], int, int, bool) -> GlobalHeatMap
         """
         Compute the global heat map for the given prompt, aggregating across time (inference steps) and space (different
         spatial transformer block heat maps).
@@ -149,7 +126,7 @@ class DiffusionHeatMapHooker(AggregateHooker):
             if normalize:
                 maps = maps / (maps[1:-1].sum(0, keepdim=True) + 1e-6)  # drop out [SOS] and [PAD] for proper probabilities
 
-        return HeatMap(self.pipe.tokenizer, prompt, maps)
+        return GlobalHeatMap(self.pipe.tokenizer, prompt, maps)
 
 
 class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
@@ -188,16 +165,31 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
     def __init__(
             self,
             module: CrossAttention,
-            heat_maps: 'RawHeatMapCollection',
+            parent_trace: 'trace',
             context_size: int = 77,
             layer_idx: int = 0,
-            latent_hw: int = 9216
+            latent_hw: int = 9216,
+            load_heads: bool = False,
+            save_heads: bool = False,
+            data_dir: Union[str, Path] = None,
     ):
         super().__init__(module)
-        self.heat_maps = heat_maps
+        self.heat_maps = parent_trace.all_heat_maps
         self.context_size = context_size
         self.layer_idx = layer_idx
         self.latent_hw = latent_hw
+
+        self.load_heads = load_heads
+        self.save_heads = save_heads
+        self.trace = parent_trace
+
+        if data_dir is not None:
+            data_dir = Path(data_dir)
+        else:
+            data_dir = cache_dir() / 'heads'
+
+        self.data_dir = data_dir
+        self.data_dir.mkdir(parents=True, exist_ok=True)
 
     @torch.no_grad()
     def _unravel_attn(self, x):
@@ -260,6 +252,12 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
         hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
         return hidden_states
 
+    def _save_attn(self, attn_slice: torch.Tensor):
+        torch.save(attn_slice, self.data_dir / f'{self.trace._gen_idx}.pt')
+
+    def _load_attn(self) -> torch.Tensor:
+        return torch.load(self.data_dir / f'{self.trace._gen_idx}.pt')
+
     def _hooked_attention(hk_self, self, query, key, value):
         """
         Monkey-patched version of :py:func:`.CrossAttention._attention` to capture attentions and aggregate them.
@@ -280,9 +278,16 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
             alpha=self.scale,
         )
         attn_slice = attention_scores.softmax(dim=-1)
-        factor = int(math.sqrt(hk_self.latent_hw // attn_slice.shape[1]))
 
-        if attn_slice.shape[-1] == hk_self.context_size:
+        if hk_self.save_heads:
+            hk_self._save_attn(attn_slice)
+        elif hk_self.load_heads:
+            attn_slice = hk_self._load_attn()
+
+        factor = int(math.sqrt(hk_self.latent_hw // attn_slice.shape[1]))
+        hk_self.trace._gen_idx += 1
+
+        if attn_slice.shape[-1] == hk_self.context_size and factor != 8:
             # shape: (batch_size, 64 // factor, 64 // factor, 77)
             maps = hk_self._unravel_attn(attn_slice)
 

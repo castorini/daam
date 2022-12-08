@@ -9,7 +9,6 @@ import numpy as np
 import torch
 
 from .evaluate import load_mask
-from .utils import plot_overlay_heat_map, expand_image
 
 
 __all__ = ['GenerationExperiment', 'COCO80_LABELS', 'COCOSTUFF27_LABELS', 'COCO80_INDICES', 'build_word_list_coco80']
@@ -129,8 +128,8 @@ class GenerationExperiment:
         if tokenizer is None:
             tokenizer = self.tokenizer
 
-        from daam import HeatMap
-        return HeatMap(tokenizer, self.prompt, self.global_heat_map)
+        from daam import GlobalHeatMap
+        return GlobalHeatMap(tokenizer, self.prompt, self.global_heat_map)
 
     def clear_checkpoint(self):
         path = self if isinstance(self, Path) else self.path
@@ -229,16 +228,15 @@ class GenerationExperiment:
             output_prefix: str = '',
             absolute: bool = False
     ) -> Path:
-        from .trace import HeatMap  # because of cyclical import
+        from .trace import GlobalHeatMap  # because of cyclical import
 
         if tokenizer is None:
             tokenizer = self.tokenizer
 
         with torch.cuda.amp.autocast(dtype=torch.float32):
-            heat_map = HeatMap(tokenizer, self.prompt, self.global_heat_map)
-            heat_map = expand_image(heat_map.compute_word_heat_map(word), absolute=absolute, out=self.image.size[0])
             path = self.path / self.subtype / f'{output_prefix}{word.lower()}.heat_map.png'
-            plot_overlay_heat_map(self.image, heat_map, word, path, crop=crop, color_normalize=not absolute)
+            heat_map = GlobalHeatMap(tokenizer, self.prompt, self.global_heat_map)
+            heat_map.compute_word_heat_map(word).expand_as(self.image, color_normalize=not absolute, out_file=path, plot=True)
 
         return path
 

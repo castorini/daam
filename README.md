@@ -40,7 +40,7 @@ You'll first need to login using `huggingface-cli login` to get many stable diff
 Next, import and call DAAM as follows:
 
 ```python
-from daam import trace, set_seed, plot_overlay_heat_map, expand_image
+from daam import trace, set_seed
 from diffusers import StableDiffusionPipeline
 from matplotlib import pyplot as plt
 import torch
@@ -59,8 +59,8 @@ with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
     with trace(pipe) as tc:
         out = pipe(prompt, num_inference_steps=30, generator=gen)
         heat_map = tc.compute_global_heat_map()
-        heat_map = expand_image(heat_map.compute_word_heat_map('dog'))
-        plot_overlay_heat_map(out.images[0], heat_map)
+        heat_map = heat_map.compute_word_heat_map('dog')
+        heat_map.plot_overlay(out.images[0])
         plt.show()
 ```
 
@@ -78,7 +78,7 @@ exp = GenerationExperiment.load('experiment-dir')  # load the experiment
 ```
 
 We'll continue adding docs.
-In the meantime, check out the `GenerationExperiment`, `HeatMap`, and `DiffusionHeatMapHooker` classes, as well as the `daam/run/*.py` example scripts.
+In the meantime, check out the `GenerationExperiment`, `GlobalHeatMap`, and `DiffusionHeatMapHooker` classes, as well as the `daam/run/*.py` example scripts.
 Our datasets are here: https://git.uwaterloo.ca/r33tang/daam-data
 
 ## Citation

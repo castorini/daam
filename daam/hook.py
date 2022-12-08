@@ -83,9 +83,10 @@ class AggregateHooker(ObjectHooker[ModuleListType]):
 
 
 class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
-    def __init__(self, restrict: bool = None):
+    def __init__(self, restrict: bool = None, locate_middle_block: bool = False):
         self.restrict = restrict
         self.layer_names = []
+        self.locate_middle_block = locate_middle_block
 
     def locate(self, model: UNet2DConditionModel) -> List[CrossAttention]:
         """
@@ -102,10 +103,10 @@ class UNetCrossAttentionLocator(ModuleLocator[CrossAttention]):
         up_names = ['up'] * len(model.up_blocks)
         down_names = ['down'] * len(model.up_blocks)
 
-        # The middle block was not found to be useful.
         for unet_block, name in itertools.chain(
                 zip(model.up_blocks, up_names),
-                zip(model.down_blocks, down_names)
+                zip(model.down_blocks, down_names),
+                zip([model.mid_block], ['mid']) if self.locate_middle_block else [],
         ):
             if 'CrossAttn' in unet_block.__class__.__name__:
                 blocks = []

@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 
 
-__all__ = ['compute_iou', 'MeanEvaluator', 'load_mask']
+__all__ = ['compute_iou', 'MeanEvaluator', 'load_mask', 'compute_ioa']
 
 
 def compute_iou(a: torch.Tensor, b: torch.Tensor) -> float:
@@ -21,6 +21,18 @@ def compute_iou(a: torch.Tensor, b: torch.Tensor) -> float:
     union = a.sum() + b.sum() - intersection
 
     return (intersection / (union + 1e-8)).item()
+
+
+def compute_ioa(a: torch.Tensor, b: torch.Tensor) -> float:
+    if a.shape[0] != b.shape[0]:
+        a = F.interpolate(a.unsqueeze(0).unsqueeze(0).float(), size=b.shape, mode='bicubic').squeeze()
+        a[a < 1] = 0
+        a[a >= 1] = 1
+
+    intersection = (a * b).sum()
+    area = a.sum()
+
+    return (intersection / (area + 1e-8)).item()
 
 
 def load_mask(path: str) -> torch.Tensor:

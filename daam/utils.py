@@ -1,5 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
+import os
+import sys
 import random
 
 import PIL.Image
@@ -10,52 +12,7 @@ import torch
 import torch.nn.functional as F
 
 
-__all__ = ['expand_image', 'set_seed', 'compute_token_merge_indices', 'plot_overlay_heat_map', 'plot_mask_heat_map',
-           'cached_nlp']
-
-
-def expand_image(im: torch.Tensor, out: int = 512, absolute: bool = False, threshold: float = None) -> torch.Tensor:
-    im = im.unsqueeze(0).unsqueeze(0)
-    im = F.interpolate(im.float().detach(), size=(out, out), mode='bicubic')
-
-    if not absolute:
-        im = (im - im.min()) / (im.max() - im.min() + 1e-8)
-
-    if threshold:
-        im = (im > threshold).float()
-
-    im = im.cpu().detach()
-
-    return im.squeeze()
-
-
-def plot_overlay_heat_map(im, heat_map, word=None, out_file=None, crop=None, color_normalize=True):
-    # type: (PIL.Image.Image | np.ndarray, torch.Tensor, str, Path, int, bool) -> None
-    plt.clf()
-    plt.rcParams.update({'font.size': 24})
-
-    with torch.cuda.amp.autocast(dtype=torch.float32):
-        im = np.array(im)
-
-        if crop is not None:
-            heat_map = heat_map.squeeze()[crop:-crop, crop:-crop]
-            im = im[crop:-crop, crop:-crop]
-
-        if color_normalize:
-            plt.imshow(heat_map.squeeze().cpu().numpy(), cmap='jet')
-        else:
-            heat_map = heat_map.clamp_(min=0, max=1)
-            plt.imshow(heat_map.squeeze().cpu().numpy(), cmap='jet', vmin=0.0, vmax=1.0)
-
-        im = torch.from_numpy(im).float() / 255
-        im = torch.cat((im, (1 - heat_map.unsqueeze(-1))), dim=-1)
-        plt.imshow(im)
-
-        if word is not None:
-            plt.title(word)
-
-        if out_file is not None:
-            plt.savefig(out_file)
+__all__ = ['set_seed', 'compute_token_merge_indices', 'plot_mask_heat_map', 'cached_nlp', 'cache_dir']
 
 
 def plot_mask_heat_map(im: PIL.Image.Image, heat_map: torch.Tensor, threshold: float = 0.4):
@@ -77,7 +34,22 @@ def set_seed(seed: int) -> torch.Generator:
     return gen
 
 
-def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int = None):
+def cache_dir() -> Path:
+    # *nix
+    if os.name == 'posix' and sys.platform != 'darwin':
+        xdg = os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))
+        return Path(xdg, 'daam')
+    elif sys.platform == 'darwin':
+        # Mac OS
+        return Path(os.path.expanduser('~'), 'Library/Caches/daam')
+    else:
+        # Windows
+        local = os.environ.get('LOCALAPPDATA', None) \
+                or os.path.expanduser('~\\AppData\\Local')
+        return Path(local, 'daam')
+
+
+def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int = None, offset_idx: int = 0):
     prompt = prompt.lower()
     tokens = tokenizer.tokenize(prompt)
     word = word.lower()
@@ -87,7 +59,7 @@ def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int
 
     if word_idx is None:
         try:
-            word_idx = prompt.split().index(word)
+            word_idx = prompt.split().index(word, offset_idx)
         except:
             for punct in ('.', ',', '!', '?'):
                 try:
@@ -96,8 +68,8 @@ def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int
                 except:
                     pass
 
-        if word_idx is None:
-            raise ValueError(f'Couldn\'t find "{word}" in "{prompt}"')
+    if word_idx is None:
+        raise ValueError(f'Couldn\'t find "{word}" in "{prompt}"')
 
     for idx, token in enumerate(tokens):
         merge_idxs.append(idx)
@@ -105,7 +77,7 @@ def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int
         if '</w>' in token:
             curr_token += token[:-4]
 
-            if curr_idx == word_idx and curr_token == word:
+            if idx >= word_idx and curr_token == word:
                 break
 
             curr_token = ''
@@ -115,7 +87,7 @@ def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int
             curr_token += token
             merge_idxs.append(idx)
 
-    return [x + 1 for x in merge_idxs]  # Offset by 1.
+    return [x + 1 for x in merge_idxs], word_idx  # Offset by 1.
 
 
 nlp = None
@@ -126,6 +98,11 @@ def cached_nlp(prompt: str, type='en_core_web_md'):
     global nlp
 
     if nlp is None:
-        nlp = spacy.load(type)
+        try:
+            nlp = spacy.load(type)
+        except OSError:
+            import os
+            os.system(f'python -m spacy download {type}')
+            nlp = spacy.load(type)
 
     return nlp(prompt)

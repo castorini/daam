@@ -19,7 +19,7 @@ from daam.utils import set_seed, cached_nlp
 
 
 def main():
-    actions = ['quickgen', 'prompt', 'coco', 'template', 'cconj', 'coco-unreal', 'stdin']
+    actions = ['quickgen', 'prompt', 'coco', 'template', 'cconj', 'coco-unreal', 'stdin', 'regenerate']
     model_id_map = {
         'v1': 'runwayml/stable-diffusion-v1-5',
         'v2-base': 'stabilityai/stable-diffusion-2-base',
@@ -37,17 +37,20 @@ def main():
     parser.add_argument('--gen-limit', type=int, default=1000)
     parser.add_argument('--template', type=str, default='{numeral} {noun}')
     parser.add_argument('--template-data-file', '-tdf', type=str, default='template.tsv')
-    parser.add_argument('--regenerate', action='store_true')
     parser.add_argument('--seed-offset', type=int, default=0)
-    parser.add_argument('--num-timesteps', type=int, default=30)
+    parser.add_argument('--num-timesteps', '-n', type=int, default=30)
     parser.add_argument('--all-heads', action='store_true')
     parser.add_argument('--word', type=str)
     parser.add_argument('--random-seed', action='store_true')
+    parser.add_argument('--truth-only', action='store_true')
+    parser.add_argument('--save-heads', action='store_true')
+    parser.add_argument('--load-heads', action='store_true')
     args = parser.parse_args()
 
     eng = inflect.engine()
     args.lemma = cached_nlp(args.word)[0].lemma_ if args.word else None
     model_id = model_id_map[args.model]
+    seeds = []
 
     if args.action.startswith('coco'):
         with (Path(args.input_folder) / 'captions_val2014.json').open() as f:
@@ -145,6 +148,19 @@ def main():
             args.output_folder = '.'
 
         prompts = [('.', args.prompt)]
+    elif args.action == 'regenerate':
+        prompts = []
+
+        for exp_folder in Path(args.input_folder).iterdir():
+            if not GenerationExperiment.contains_truth_mask(exp_folder) and args.truth_only:
+                continue
+
+            prompt = GenerationExperiment.read_prompt(exp_folder)
+            prompts.append((exp_folder.name, prompt))
+            seeds.append(GenerationExperiment.read_seed(exp_folder))
+
+        if args.output_folder is None:
+            args.output_folder = args.input_folder
     else:
         prompts = [('prompt', input('> '))]
 
@@ -178,10 +194,14 @@ def main():
     pipe = pipe.to('cuda')
 
     with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
-        for prompt_id, prompt in tqdm(prompts):
+        for gen_idx, (prompt_id, prompt) in enumerate(tqdm(prompts)):
             seed = int(time.time()) if args.random_seed else args.seed
-            gen = set_seed(seed)  # Uncomment this for seed fix
             prompt = prompt.replace(',', ' ,').replace('.', ' .').strip()
+
+            if seeds and gen_idx < len(seeds):
+                seed = seeds[gen_idx]
+
+            gen = set_seed(seed)
 
             if args.action == 'cconj':
                 seed = int(prompt_id.split('-')[1]) + args.seed_offset
@@ -189,13 +209,8 @@ def main():
 
             prompt_id = str(prompt_id)
 
-            if args.regenerate and not GenerationExperiment.contains_truth_mask(args.output_folder, prompt_id):
-                continue
-            elif args.regenerate:
-                print(f'Regenerating {prompt_id}')
-
-            with trace(pipe, low_memory=args.low_memory) as tc:
-                out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen)
+            with trace(pipe, low_memory=args.low_memory, save_heads=args.save_heads, load_heads=args.load_heads) as tc:
+                out = pipe(prompt, num_inference_steps=args.num_timesteps, generator=gen, callback=tc.time_callback)
                 exp = tc.to_experiment(args.output_folder, id=prompt_id, seed=seed)
                 exp.save(args.output_folder, heat_maps=args.action == 'quickgen')
 

@@ -1,0 +1,46 @@
+.output-html {
+    overflow-x: auto;
+}
+
+.output-html::-webkit-scrollbar {
+    -webkit-appearance: none;
+}
+
+.output-html::-webkit-scrollbar:vertical {
+    width: 0px;
+}
+
+.output-html::-webkit-scrollbar:horizontal {
+    height: 11px;
+}
+
+.output-html::-webkit-scrollbar-thumb {
+    border-radius: 8px;
+    border: 2px solid white;
+    background-color: rgba(0, 0, 0, .5);
+}
+
+.output-html::-webkit-scrollbar-track {
+    background-color: #fff;
+    border-radius: 8px;
+}
+
+.spans {
+    min-height: 75px;
+}
+
+svg {
+    margin: auto;
+    display: block;
+}
+
+#submit-btn {
+    z-index: 999;
+}
+
+#viz {
+    width: 100%;
+    top: -30px;
+    object-fit: scale-down;
+    object-position: 0 100%;
+}
