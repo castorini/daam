@@ -73,7 +73,7 @@ def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int
                 first_pos += len(word_token)
 
             # merge together all tokens in the word
-            return [first_pos + i for i in range(0, token_len)]
+            return [first_pos + i + offset_idx for i in range(0, token_len)]
 
         for idx, w_token in enumerate(word_tokens):
             # if the word contains more than one token
