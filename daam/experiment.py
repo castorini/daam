@@ -8,6 +8,7 @@ import PIL.Image
 import numpy as np
 import torch
 
+from .utils import auto_autocast
 from .evaluate import load_mask
 
 
@@ -233,7 +234,7 @@ class GenerationExperiment:
         if tokenizer is None:
             tokenizer = self.tokenizer
 
-        with torch.cuda.amp.autocast(dtype=torch.float32):
+        with auto_autocast(dtype=torch.float32):
             path = self.path / self.subtype / f'{output_prefix}{word.lower()}.heat_map.png'
             heat_map = GlobalHeatMap(tokenizer, self.prompt, self.global_heat_map)
             heat_map.compute_word_heat_map(word).expand_as(self.image, color_normalize=not absolute, out_file=path, plot=True)

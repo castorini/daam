@@ -12,7 +12,7 @@ import torch
 from spacy import displacy
 
 from daam import trace
-from daam.utils import set_seed, cached_nlp
+from daam.utils import set_seed, cached_nlp, auto_autocast
 
 
 def dependency(text):
@@ -83,7 +83,7 @@ def main():
             new_prompt = ' '.join(new_prompt)
 
         merge_idxs, words = get_tokenizing_mapping(prompt, pipe.tokenizer)
-        with torch.cuda.amp.autocast(dtype=torch.float16), lock:
+        with auto_autocast(dtype=torch.float16), lock:
             try:
                 plt.close('all')
                 plt.clf()

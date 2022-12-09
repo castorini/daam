@@ -9,7 +9,7 @@ import PIL.Image as Image
 import torch
 import torch.nn.functional as F
 
-from . import cache_dir
+from .utils import cache_dir, auto_autocast
 from .experiment import GenerationExperiment
 from .heatmap import RawHeatMapCollection, GlobalHeatMap
 from .hook import ObjectHooker, AggregateHooker, UNetCrossAttentionLocator
@@ -105,7 +105,7 @@ class DiffusionHeatMapHooker(AggregateHooker):
         all_merges = []
         x = int(np.sqrt(self.latent_hw))
 
-        with torch.cuda.amp.autocast(dtype=torch.float32):
+        with auto_autocast(dtype=torch.float32):
             for (factor, layer, head), heat_map in heat_maps:
                 if factor in factors and (head_idx is None or head_idx == head) and (layer_idx is None or layer_idx == layer):
                     heat_map = heat_map.unsqueeze(1)
@@ -209,7 +209,7 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
         maps = []
         x = x.permute(2, 0, 1)
 
-        with torch.cuda.amp.autocast(dtype=torch.float32):
+        with auto_autocast(dtype=torch.float32):
             for map_ in x:
                 map_ = map_.view(map_.size(0), h, w)
                 map_ = map_[map_.size(0) // 2:]  # Filter out unconditional

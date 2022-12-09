@@ -15,7 +15,7 @@ import torch
 
 from daam import trace
 from daam.experiment import GenerationExperiment, build_word_list_coco80
-from daam.utils import set_seed, cached_nlp
+from daam.utils import set_seed, cached_nlp, auto_device, auto_autocast
 
 
 def main():
@@ -191,9 +191,9 @@ def main():
 
     prompts = prompts[:args.gen_limit]
     pipe = StableDiffusionPipeline.from_pretrained(model_id, use_auth_token=True)
-    pipe = pipe.to('cuda')
+    pipe = auto_device(pipe)
 
-    with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
+    with auto_autocast(dtype=torch.float16), torch.no_grad():
         for gen_idx, (prompt_id, prompt) in enumerate(tqdm(prompts)):
             seed = int(time.time()) if args.random_seed else args.seed
             prompt = prompt.replace(',', ' ,').replace('.', ' .').strip()
