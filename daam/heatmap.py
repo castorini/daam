@@ -12,8 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from .evaluate import compute_ioa
-from .utils import compute_token_merge_indices, cached_nlp
-
+from .utils import compute_token_merge_indices, cached_nlp, auto_autocast
 
 __all__ = ['GlobalHeatMap', 'RawHeatMapCollection', 'WordHeatMap', 'ParsedHeatMap', 'SyntacticHeatMapPair']
 
@@ -27,7 +26,7 @@ def plot_overlay_heat_map(im, heat_map, word=None, out_file=None, crop=None, col
     else:
         plt_ = ax
 
-    with torch.cuda.amp.autocast(dtype=torch.float32):
+    with auto_autocast(dtype=torch.float32):
         im = np.array(im)
 
         if crop is not None:
@@ -152,7 +151,7 @@ class RawHeatMapCollection:
         self.ids_to_num_maps: Dict[RawHeatMapKey, int] = defaultdict(lambda: 0)
 
     def update(self, factor: int, layer_idx: int, head_idx: int, heatmap: torch.Tensor):
-        with torch.cuda.amp.autocast(dtype=torch.float32):
+        with auto_autocast(dtype=torch.float32):
             key = (factor, layer_idx, head_idx)
             self.ids_to_heatmaps[key] = self.ids_to_heatmaps[key] + heatmap
 

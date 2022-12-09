@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import sys
 import random
+from typing import TypeVar
 
 import PIL.Image
 import matplotlib.pyplot as plt
@@ -13,7 +14,27 @@ import torch
 import torch.nn.functional as F
 
 
-__all__ = ['set_seed', 'compute_token_merge_indices', 'plot_mask_heat_map', 'cached_nlp', 'cache_dir']
+__all__ = ['set_seed', 'compute_token_merge_indices', 'plot_mask_heat_map', 'cached_nlp', 'cache_dir', 'auto_device', 'auto_autocast']
+
+
+T = TypeVar('T')
+
+
+def auto_device(obj: T = torch.device('cpu')) -> T:
+    if isinstance(obj, torch.device):
+        return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    if torch.cuda.is_available():
+        return obj.to('cuda')
+
+    return obj
+
+
+def auto_autocast(*args, **kwargs):
+    if not torch.cuda.is_available():
+        kwargs['enabled'] = False
+
+    return torch.cuda.amp.autocast(*args, **kwargs)
 
 
 def plot_mask_heat_map(im: PIL.Image.Image, heat_map: torch.Tensor, threshold: float = 0.4):
@@ -29,7 +50,7 @@ def set_seed(seed: int) -> torch.Generator:
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    gen = torch.Generator(device='cuda')
+    gen = torch.Generator(device=auto_device())
     gen.manual_seed(seed)
 
     return gen
