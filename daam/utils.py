@@ -1,4 +1,3 @@
-import string
 from functools import lru_cache
 from pathlib import Path
 import os
@@ -72,42 +71,16 @@ def cache_dir() -> Path:
 
 
 def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int = None, offset_idx: int = 0):
-    prompt = prompt.lower()
-    tokens = tokenizer.tokenize(prompt)
-    word = word.lower()
     merge_idxs = []
-    curr_idx = 0
-    curr_token = ''
-
+    tokens = tokenizer.tokenize(prompt.lower())
     if word_idx is None:
-        prompt = prompt.lower()
+        word = word.lower()
         search_tokens = tokenizer.tokenize(word)
-        punc_tokens = [p + '</w>' for p in string.punctuation]
-        # compute the tokens for each word
-        word_tokens = [tokenizer.tokenize(word) for word in prompt.split()]
-
-        # calculate the token position from the word position
-        def calc_token_positions(end_idx, token_len):
-            slice = word_tokens[:end_idx]
-            first_pos = 0
-            for word_token in slice:
-                first_pos += len(word_token)
-
-            # merge together all tokens in the word
-            return [first_pos + i + offset_idx for i in range(0, token_len)]
-
-        for idx, w_token in enumerate(word_tokens):
-            # if the word contains more than one token
-            if len(w_token) > len(search_tokens):
-                # check to see if the extra tokens were from punctuation
-                no_punc = [t for t in w_token if t not in punc_tokens]
-                search_no_punc = [t for t in search_tokens if t not in punc_tokens]
-                if no_punc and no_punc == search_no_punc:
-                    merge_idxs += calc_token_positions(idx, len(search_tokens))
-                    word_idx = idx
-            elif w_token == search_tokens:
-                merge_idxs += calc_token_positions(idx, len(search_tokens))
-                word_idx = idx
+        start_indices = [x + offset_idx for x in range(len(tokens)) if tokens[x:x + len(search_tokens)] == search_tokens]
+        for indice in start_indices:
+            merge_idxs += [i + indice for i in range(0, len(search_tokens))]
+        if not merge_idxs:
+            raise Exception(f'Search word {word} not found in prompt!')
     else:
         merge_idxs.append(word_idx)
 
