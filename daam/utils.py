@@ -78,7 +78,7 @@ def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int
         search_tokens = tokenizer.tokenize(word)
         start_indices = [x + offset_idx for x in range(len(tokens)) if tokens[x:x + len(search_tokens)] == search_tokens]
         for indice in start_indices:
-            merge_idxs += [i + indice for i in range(0, len(search_tokens))]
+            merge_idxs += [i + indice + offset_idx for i in range(0, len(search_tokens))]
         if not merge_idxs:
             raise Exception(f'Search word {word} not found in prompt!')
     else:
