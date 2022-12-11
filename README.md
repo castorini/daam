@@ -10,8 +10,7 @@ I regularly update this codebase. Please submit an issue if you have any questio
 
 In [our paper](https://arxiv.org/abs/2210.04885), we propose diffusion attentive attribution maps (DAAM), a cross attention-based approach for interpreting Stable Diffusion.
 Check out our demo: https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps.
-Our [documentation](https://castorini.github.io/daam/) is hosted by GitHub pages.
-See [1littlecoder's video](https://www.youtube.com/watch?v=J2WtkA1Xfew) for a code demonstration and Colab notebook of DAAM (older version).
+See our [documentation](https://castorini.github.io/daam/), hosted by GitHub pages, and [our Colab notebook](https://colab.research.google.com/drive/1miGauqa07uHnDoe81NmbmtTtnupmlipv?usp=sharing), updated for v0.0.11.
 
 ## Getting Started
 First, install [PyTorch](https://pytorch.org) for your platform.
@@ -80,6 +79,9 @@ exp = GenerationExperiment.load('experiment-dir')  # load the experiment
 We'll continue adding docs.
 In the meantime, check out the `GenerationExperiment`, `GlobalHeatMap`, and `DiffusionHeatMapHooker` classes, as well as the `daam/run/*.py` example scripts.
 Our datasets are here: https://git.uwaterloo.ca/r33tang/daam-data
+
+## See Also
+- [1littlecoder's video](https://www.youtube.com/watch?v=J2WtkA1Xfew) for a code demonstration and Colab notebook of an older version of DAAM.
 
 ## Citation
 ```
