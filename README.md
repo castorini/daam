@@ -4,7 +4,7 @@
 
 ![example image](example.jpg)
 
-### Updated to support Stable Diffusion V2!
+### Updated to support Stable Diffusion V2.1!
 
 I regularly update this codebase. Please submit an issue if you have any questions.
 
