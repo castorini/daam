@@ -23,7 +23,9 @@ def main():
     model_id_map = {
         'v1': 'runwayml/stable-diffusion-v1-5',
         'v2-base': 'stabilityai/stable-diffusion-2-base',
-        'v2-large': 'stabilityai/stable-diffusion-2'
+        'v2-large': 'stabilityai/stable-diffusion-2',
+        'v2-1-base': 'stabilityai/stable-diffusion-2-1-base',
+        'v2-1-large': 'stabilityai/stable-diffusion-2-1'
     }
 
     parser = argparse.ArgumentParser()
