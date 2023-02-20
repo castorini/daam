@@ -83,7 +83,7 @@ Our datasets are here: https://git.uwaterloo.ca/r33tang/daam-data
 ## See Also
 - [1littlecoder's video](https://www.youtube.com/watch?v=J2WtkA1Xfew) for a code demonstration and Colab notebook of an older version of DAAM.
 
-- [Easiest way to use DAAM script tutorial](https://www.youtube.com/watch?v=XiKyEKJrTLQ)
+- [Furkan's video](https://www.youtube.com/watch?v=XiKyEKJrTLQ) on easily getting started with DAAM.
 
 ## Citation
 ```
