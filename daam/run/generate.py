@@ -32,7 +32,7 @@ def main():
     parser.add_argument('prompt', nargs='?', type=str)
     parser.add_argument('--action', '-a', type=str, choices=actions, default=actions[0])
     parser.add_argument('--low-memory', action='store_true')
-    parser.add_argument('--model', type=str, default='v2-base', choices=list(model_id_map.keys()))
+    parser.add_argument('--model', type=str, default='v2-1-base', choices=list(model_id_map.keys()))
     parser.add_argument('--output-folder', '-o', type=str)
     parser.add_argument('--input-folder', '-i', type=str, default='input')
     parser.add_argument('--seed', '-s', type=int, default=0)

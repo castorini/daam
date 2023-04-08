@@ -45,11 +45,13 @@ def get_args():
     model_id_map = {
         'v1': 'runwayml/stable-diffusion-v1-5',
         'v2-base': 'stabilityai/stable-diffusion-2-base',
-        'v2-large': 'stabilityai/stable-diffusion-2'
+        'v2-large': 'stabilityai/stable-diffusion-2',
+        'v2-1-base': 'stabilityai/stable-diffusion-2-1-base',
+        'v2-1-large': 'stabilityai/stable-diffusion-2-1',
     }
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', '-m', type=str, default='v2-base', choices=list(model_id_map.keys()), help="which diffusion model to use")
+    parser.add_argument('--model', '-m', type=str, default='v2-1-base', choices=list(model_id_map.keys()), help="which diffusion model to use")
     parser.add_argument('--seed', '-s', type=int, default=0, help="the random seed")
     parser.add_argument('--port', '-p', type=int, default=8080, help="the port to launch the demo")
     parser.add_argument('--no-cuda', action='store_true', help="Use CPUs instead of GPUs")

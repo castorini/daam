@@ -218,92 +218,68 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
         maps = torch.stack(maps, 0)  # shape: (tokens, heads, height, width)
         return maps.permute(1, 0, 2, 3).contiguous()  # shape: (heads, tokens, height, width)
 
-    def _hooked_sliced_attention(hk_self, self, query, key, value, sequence_length, dim):
-        batch_size_attention = query.shape[0]
-        hidden_states = torch.zeros(
-            (batch_size_attention, sequence_length, dim // self.heads), device=query.device, dtype=query.dtype
-        )
-        slice_size = self._slice_size if self._slice_size is not None else hidden_states.shape[0]
-        for i in range(hidden_states.shape[0] // slice_size):
-            start_idx = i * slice_size
-            end_idx = (i + 1) * slice_size
-            attn_slice = torch.baddbmm(
-                torch.empty(slice_size, query.shape[1], key.shape[1], dtype=query.dtype, device=query.device),
-                query[start_idx:end_idx],
-                key[start_idx:end_idx].transpose(-1, -2),
-                beta=0,
-                alpha=self.scale,
-            )
-            attn_slice = attn_slice.softmax(dim=-1)
-            factor = int(math.sqrt(hk_self.latent_hw // attn_slice.shape[1]))
-
-            if attn_slice.shape[-1] == hk_self.context_size:
-                # shape: (batch_size, 64 // factor, 64 // factor, 77)
-                maps = hk_self._unravel_attn(attn_slice)
-
-                for head_idx, heatmap in enumerate(maps):
-                    hk_self.heat_maps.update(factor, hk_self.layer_idx, head_idx, heatmap)
-
-            attn_slice = torch.bmm(attn_slice, value[start_idx:end_idx])
-
-            hidden_states[start_idx:end_idx] = attn_slice
-
-        # reshape hidden_states
-        hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
-        return hidden_states
-
     def _save_attn(self, attn_slice: torch.Tensor):
         torch.save(attn_slice, self.data_dir / f'{self.trace._gen_idx}.pt')
 
     def _load_attn(self) -> torch.Tensor:
         return torch.load(self.data_dir / f'{self.trace._gen_idx}.pt')
 
-    def _hooked_attention(hk_self, self, query, key, value):
-        """
-        Monkey-patched version of :py:func:`.CrossAttention._attention` to capture attentions and aggregate them.
+    def __call__(
+            self,
+            attn: CrossAttention,
+            hidden_states,
+            encoder_hidden_states=None,
+            attention_mask=None,
+    ):
+        """Capture attentions and aggregate them."""
+        batch_size, sequence_length, _ = hidden_states.shape
+        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
+        query = attn.to_q(hidden_states)
 
-        Args:
-            hk_self (`UNetCrossAttentionHooker`): pointer to the hook itself.
-            self (`CrossAttention`): pointer to the module.
-            query (`torch.Tensor`): the query tensor.
-            key (`torch.Tensor`): the key tensor.
-            value (`torch.Tensor`): the value tensor.
-        """
+        if encoder_hidden_states is None:
+            encoder_hidden_states = hidden_states
+        elif attn.cross_attention_norm:
+            encoder_hidden_states = attn.norm_cross(encoder_hidden_states)
 
-        attention_scores = torch.baddbmm(
-            torch.empty(query.shape[0], query.shape[1], key.shape[1], dtype=query.dtype, device=query.device),
-            query,
-            key.transpose(-1, -2),
-            beta=0,
-            alpha=self.scale,
-        )
-        attn_slice = attention_scores.softmax(dim=-1)
+        key = attn.to_k(encoder_hidden_states)
+        value = attn.to_v(encoder_hidden_states)
 
-        if hk_self.save_heads:
-            hk_self._save_attn(attn_slice)
-        elif hk_self.load_heads:
-            attn_slice = hk_self._load_attn()
+        query = attn.head_to_batch_dim(query)
+        key = attn.head_to_batch_dim(key)
+        value = attn.head_to_batch_dim(value)
 
-        factor = int(math.sqrt(hk_self.latent_hw // attn_slice.shape[1]))
-        hk_self.trace._gen_idx += 1
+        attention_probs = attn.get_attention_scores(query, key, attention_mask)
 
-        if attn_slice.shape[-1] == hk_self.context_size and factor != 8:
+        # DAAM save heads
+        if self.save_heads:
+            self._save_attn(attention_probs)
+        elif self.load_heads:
+            attention_probs = self._load_attn()
+
+        # compute shape factor
+        factor = int(math.sqrt(self.latent_hw // attention_probs.shape[1]))
+        self.trace._gen_idx += 1
+
+        # skip if too large
+        if attention_probs.shape[-1] == self.context_size and factor != 8:
             # shape: (batch_size, 64 // factor, 64 // factor, 77)
-            maps = hk_self._unravel_attn(attn_slice)
+            maps = self._unravel_attn(attention_probs)
 
             for head_idx, heatmap in enumerate(maps):
-                hk_self.heat_maps.update(factor, hk_self.layer_idx, head_idx, heatmap)
+                self.heat_maps.update(factor, self.layer_idx, head_idx, heatmap)
 
-        # compute attention output
-        hidden_states = torch.bmm(attn_slice, value)
+        hidden_states = torch.bmm(attention_probs, value)
+        hidden_states = attn.batch_to_head_dim(hidden_states)
 
-        # reshape hidden_states
-        hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
+        # linear proj
+        hidden_states = attn.to_out[0](hidden_states)
+        # dropout
+        hidden_states = attn.to_out[1](hidden_states)
+
         return hidden_states
 
     def _hook_impl(self):
-        self.monkey_patch('_attention', self._hooked_attention)
-        self.monkey_patch('_sliced_attention', self._hooked_sliced_attention)
+        self.module.set_processor(self)
 
     @property
     def num_heat_maps(self):

@@ -1,11 +1,12 @@
 scikit-image
-diffusers==0.9.0
+diffusers==0.14.0
 spacy
 gradio
 ftfy
-transformers==4.24.0
+transformers==4.27.4
 pandas
 numba
 nltk
 inflect
 joblib
+accelerate
