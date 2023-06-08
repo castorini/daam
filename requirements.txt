@@ -1,5 +1,5 @@
 scikit-image
-diffusers==0.14.0
+diffusers==0.16.1
 spacy
 gradio
 ftfy

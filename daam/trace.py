@@ -3,7 +3,7 @@ from typing import List, Type, Any, Dict, Tuple, Union
 import math
 
 from diffusers import StableDiffusionPipeline
-from diffusers.models.attention import CrossAttention
+from diffusers.models.attention_processor import Attention
 import numpy as np
 import PIL.Image as Image
 import torch
@@ -161,10 +161,10 @@ class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
         self.monkey_patch('_encode_prompt', self._hooked_encode_prompt)
 
 
-class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
+class UNetCrossAttentionHooker(ObjectHooker[Attention]):
     def __init__(
             self,
-            module: CrossAttention,
+            module: Attention,
             parent_trace: 'trace',
             context_size: int = 77,
             layer_idx: int = 0,
@@ -226,7 +226,7 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
 
     def __call__(
             self,
-            attn: CrossAttention,
+            attn: Attention,
             hidden_states,
             encoder_hidden_states=None,
             attention_mask=None,
@@ -238,7 +238,7 @@ class UNetCrossAttentionHooker(ObjectHooker[CrossAttention]):
 
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
-        elif attn.cross_attention_norm:
+        elif attn.norm_cross is not None:
             encoder_hidden_states = attn.norm_cross(encoder_hidden_states)
 
         key = attn.to_k(encoder_hidden_states)
