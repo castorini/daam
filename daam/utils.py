@@ -80,7 +80,7 @@ def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int
         for indice in start_indices:
             merge_idxs += [i + indice for i in range(0, len(search_tokens))]
         if not merge_idxs:
-            raise Exception(f'Search word {word} not found in prompt!')
+            raise ValueError(f'Search word {word} not found in prompt!')
     else:
         merge_idxs.append(word_idx)
 
