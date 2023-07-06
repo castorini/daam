@@ -81,9 +81,11 @@ In the meantime, check out the `GenerationExperiment`, `GlobalHeatMap`, and `Dif
 Our datasets are here: https://git.uwaterloo.ca/r33tang/daam-data
 
 ## See Also
-- [1littlecoder's video](https://www.youtube.com/watch?v=J2WtkA1Xfew) for a code demonstration and Colab notebook of an older version of DAAM.
+- [DAAM-i2i](https://github.com/RishiDarkDevil/daam-i2i), an extension of DAAM to image-to-image attribution.
 
 - [Furkan's video](https://www.youtube.com/watch?v=XiKyEKJrTLQ) on easily getting started with DAAM.
+
+- [1littlecoder's video](https://www.youtube.com/watch?v=J2WtkA1Xfew) for a code demonstration and Colab notebook of an older version of DAAM.
 
 ## Citation
 ```
