@@ -1,6 +1,6 @@
 # What the DAAM: Interpreting Stable Diffusion Using Cross Attention
 
-[![HF Spaces](https://img.shields.io/badge/HuggingFace%20Space-online-green.svg)](https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps) [![Citation](https://img.shields.io/badge/Citation-arXiv-orange.svg)](https://gist.githubusercontent.com/daemon/c526f4f9ab2d5e946e6bae90a9a02571/raw/02dcc6cb09a39559b39449a7d27d3b950bec39bd/daam-citation.bib) [![PyPi version](https://badgen.net/pypi/v/daam?color=blue)](https://pypi.org/project/daam) [![Downloads](https://static.pepy.tech/badge/daam)](https://pepy.tech/project/daam)
+[![HF Spaces](https://img.shields.io/badge/HuggingFace%20Space-online-green.svg)](https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps) [![Citation](https://img.shields.io/badge/Citation-ACL-orange.svg)](https://gist.github.com/daemon/639de6fea584d7df1a62f04a2ea0cdad) [![PyPi version](https://badgen.net/pypi/v/daam?color=blue)](https://pypi.org/project/daam) [![Downloads](https://static.pepy.tech/badge/daam)](https://pepy.tech/project/daam)
 
 ![example image](example.jpg)
 
@@ -8,7 +8,7 @@
 
 I regularly update this codebase. Please submit an issue if you have any questions.
 
-In [our paper](https://arxiv.org/abs/2210.04885), we propose diffusion attentive attribution maps (DAAM), a cross attention-based approach for interpreting Stable Diffusion.
+In [our paper](https://aclanthology.org/2023.acl-long.310), we propose diffusion attentive attribution maps (DAAM), a cross attention-based approach for interpreting Stable Diffusion.
 Check out our demo: https://huggingface.co/spaces/tetrisd/Diffusion-Attentive-Attribution-Maps.
 See our [documentation](https://castorini.github.io/daam/), hosted by GitHub pages, and [our Colab notebook](https://colab.research.google.com/drive/1miGauqa07uHnDoe81NmbmtTtnupmlipv?usp=sharing), updated for v0.0.11.
 
@@ -90,10 +90,19 @@ If clicking the link doesn't work on your browser, copy and paste it in a new ta
 
 ## Citation
 ```
-@article{tang2022daam,
-  title={What the {DAAM}: Interpreting Stable Diffusion Using Cross Attention},
-  author={Tang, Raphael and Liu, Linqing and Pandey, Akshat and Jiang, Zhiying and Yang, Gefei and Kumar, Karun and Stenetorp, Pontus and Lin, Jimmy and Ture, Ferhan},
-  journal={arXiv:2210.04885},
-  year={2022}
+@inproceedings{tang2023daam,
+    title = "What the {DAAM}: Interpreting Stable Diffusion Using Cross Attention",
+    author = "Tang, Raphael  and
+      Liu, Linqing  and
+      Pandey, Akshat  and
+      Jiang, Zhiying  and
+      Yang, Gefei  and
+      Kumar, Karun  and
+      Stenetorp, Pontus  and
+      Lin, Jimmy  and
+      Ture, Ferhan",
+    booktitle = "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
+    year = "2023",
+    url = "https://aclanthology.org/2023.acl-long.310",
 }
 ```
