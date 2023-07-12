@@ -78,7 +78,7 @@ exp = GenerationExperiment.load('experiment-dir')  # load the experiment
 
 We'll continue adding docs.
 In the meantime, check out the `GenerationExperiment`, `GlobalHeatMap`, and `DiffusionHeatMapHooker` classes, as well as the `daam/run/*.py` example scripts.
-You download the COCO-Gen dataset from the paper at http://ralphtang.com/coco-gen.tar.gz.
+You can download the COCO-Gen dataset from the paper at http://ralphtang.com/coco-gen.tar.gz.
 If clicking the link doesn't work on your browser, copy and paste it in a new tab, or use a CLI utility such as `wget`.
 
 ## See Also
