@@ -101,7 +101,7 @@ class UNetCrossAttentionLocator(ModuleLocator[Attention]):
         self.layer_names.clear()
         blocks_list = []
         up_names = ['up'] * len(model.up_blocks)
-        down_names = ['down'] * len(model.up_blocks)
+        down_names = ['down'] * len(model.down_blocks)
 
         for unet_block, name in itertools.chain(
                 zip(model.up_blocks, up_names),
