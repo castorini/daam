@@ -137,8 +137,11 @@ class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
 
     def _hooked_run_safety_checker(hk_self, self: StableDiffusionPipeline, image, *args, **kwargs):
         image, has_nsfw = hk_self.monkey_super('run_safety_checker', image, *args, **kwargs)
-        pil_image = self.numpy_to_pil(image)
-        hk_self.parent_trace.last_image = pil_image[0]
+        if torch.is_tensor(image):
+            images = self.image_processor.postprocess(image, output_type="pil")
+        else:
+            images = self.image_processor.numpy_to_pil(image)
+        hk_self.parent_trace.last_image = images[len(images)-1] 
 
         return image, has_nsfw
 
