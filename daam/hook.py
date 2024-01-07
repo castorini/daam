@@ -55,9 +55,13 @@ class ObjectHooker(Generic[ModuleType]):
 
         return self
 
-    def monkey_patch(self, fn_name, fn):
-        self.old_state[f'old_fn_{fn_name}'] = getattr(self.module, fn_name)
-        setattr(self.module, fn_name, functools.partial(fn, self.module))
+    def monkey_patch(self, fn_name, fn, strict: bool = True):
+        try:
+            self.old_state[f'old_fn_{fn_name}'] = getattr(self.module, fn_name)
+            setattr(self.module, fn_name, functools.partial(fn, self.module))
+        except AttributeError:
+            if strict:
+                raise
 
     def monkey_super(self, fn_name, *args, **kwargs):
         return self.old_state[f'old_fn_{fn_name}'](*args, **kwargs)

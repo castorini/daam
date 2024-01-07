@@ -7,7 +7,7 @@ import sys
 import time
 
 import pandas as pd
-from diffusers import StableDiffusionPipeline
+from diffusers import StableDiffusionPipeline, DiffusionPipeline
 from tqdm import tqdm
 import inflect
 import numpy as np
@@ -25,7 +25,8 @@ def main():
         'v2-base': 'stabilityai/stable-diffusion-2-base',
         'v2-large': 'stabilityai/stable-diffusion-2',
         'v2-1-base': 'stabilityai/stable-diffusion-2-1-base',
-        'v2-1-large': 'stabilityai/stable-diffusion-2-1'
+        'v2-1-large': 'stabilityai/stable-diffusion-2-1',
+        'xl-base-1.0': 'stabilityai/stable-diffusion-xl-base-1.0',
     }
 
     parser = argparse.ArgumentParser()
@@ -192,10 +193,20 @@ def main():
         prompts = new_prompts
 
     prompts = prompts[:args.gen_limit]
-    pipe = StableDiffusionPipeline.from_pretrained(model_id, use_auth_token=True)
+
+    if 'xl' in model_id:
+        pipe = DiffusionPipeline.from_pretrained(
+            model_id,
+            use_auth_token=True,
+            torch_dtype=torch.float16,
+            use_safetensors=True, variant='fp16'
+        )
+    else:
+        pipe = StableDiffusionPipeline.from_pretrained(model_id, use_auth_token=True)
+
     pipe = auto_device(pipe)
 
-    with auto_autocast(dtype=torch.float16), torch.no_grad():
+    with torch.no_grad():
         for gen_idx, (prompt_id, prompt) in enumerate(tqdm(prompts)):
             seed = int(time.time()) if args.random_seed else args.seed
             prompt = prompt.replace(',', ' ,').replace('.', ' .').strip()

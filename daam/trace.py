@@ -2,7 +2,8 @@ from pathlib import Path
 from typing import List, Type, Any, Dict, Tuple, Union
 import math
 
-from diffusers import StableDiffusionPipeline
+from diffusers import StableDiffusionPipeline, StableDiffusionXLPipeline
+from diffusers.image_processor import VaeImageProcessor
 from diffusers.models.attention_processor import Attention
 import numpy as np
 import PIL.Image as Image
@@ -21,8 +22,7 @@ __all__ = ['trace', 'DiffusionHeatMapHooker', 'GlobalHeatMap']
 class DiffusionHeatMapHooker(AggregateHooker):
     def __init__(
             self,
-            pipeline:
-            StableDiffusionPipeline,
+            pipeline: Union[StableDiffusionPipeline, StableDiffusionXLPipeline],
             low_memory: bool = False,
             load_heads: bool = False,
             save_heads: bool = False,
@@ -30,7 +30,7 @@ class DiffusionHeatMapHooker(AggregateHooker):
     ):
         self.all_heat_maps = RawHeatMapCollection()
         h = (pipeline.unet.config.sample_size * pipeline.vae_scale_factor)
-        self.latent_hw = 4096 if h == 512 else 9216  # 64x64 or 96x96 depending on if it's 2.0-v or 2.0
+        self.latent_hw = 4096 if h == 512 or h == 1024 else 9216  # 64x64 or 96x96 depending on if it's 2.0-v or 2.0
         locate_middle = load_heads or save_heads
         self.locator = UNetCrossAttentionLocator(restrict={0} if low_memory else None, locate_middle_block=locate_middle)
         self.last_prompt: str = ''
@@ -51,6 +51,9 @@ class DiffusionHeatMapHooker(AggregateHooker):
         ]
 
         modules.append(PipelineHooker(pipeline, self))
+
+        if type(pipeline) == StableDiffusionXLPipeline:
+            modules.append(ImageProcessorHooker(pipeline.image_processor, self))
 
         super().__init__(modules)
         self.pipe = pipeline
@@ -129,6 +132,21 @@ class DiffusionHeatMapHooker(AggregateHooker):
         return GlobalHeatMap(self.pipe.tokenizer, prompt, maps)
 
 
+class ImageProcessorHooker(ObjectHooker[VaeImageProcessor]):
+    def __init__(self, processor: VaeImageProcessor, parent_trace: 'trace'):
+        super().__init__(processor)
+        self.parent_trace = parent_trace
+
+    def _hooked_postprocess(hk_self, _: VaeImageProcessor, *args, **kwargs):
+        images = hk_self.monkey_super('postprocess', *args, **kwargs)
+        hk_self.parent_trace.last_image = images[0]
+
+        return images
+
+    def _hook_impl(self):
+        self.monkey_patch('postprocess', self._hooked_postprocess)
+
+
 class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
     def __init__(self, pipeline: StableDiffusionPipeline, parent_trace: 'trace'):
         super().__init__(pipeline)
@@ -137,12 +155,20 @@ class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
 
     def _hooked_run_safety_checker(hk_self, self: StableDiffusionPipeline, image, *args, **kwargs):
         image, has_nsfw = hk_self.monkey_super('run_safety_checker', image, *args, **kwargs)
-        pil_image = self.numpy_to_pil(image)
-        hk_self.parent_trace.last_image = pil_image[0]
+
+        if self.image_processor:
+            if torch.is_tensor(image):
+                images = self.image_processor.postprocess(image, output_type='pil')
+            else:
+                images = self.image_processor.numpy_to_pil(image)
+        else:
+            images = self.numpy_to_pil(image)
+
+        hk_self.parent_trace.last_image = images[len(images)-1]
 
         return image, has_nsfw
 
-    def _hooked_encode_prompt(hk_self, _: StableDiffusionPipeline, prompt: Union[str, List[str]], *args, **kwargs):
+    def _hooked_check_inputs(hk_self, _: StableDiffusionPipeline, prompt: Union[str, List[str]], *args, **kwargs):
         if not isinstance(prompt, str) and len(prompt) > 1:
             raise ValueError('Only single prompt generation is supported for heat map computation.')
         elif not isinstance(prompt, str):
@@ -152,13 +178,12 @@ class PipelineHooker(ObjectHooker[StableDiffusionPipeline]):
 
         hk_self.heat_maps.clear()
         hk_self.parent_trace.last_prompt = last_prompt
-        ret = hk_self.monkey_super('_encode_prompt', prompt, *args, **kwargs)
 
-        return ret
+        return hk_self.monkey_super('check_inputs', prompt, *args, **kwargs)
 
     def _hook_impl(self):
-        self.monkey_patch('run_safety_checker', self._hooked_run_safety_checker)
-        self.monkey_patch('_encode_prompt', self._hooked_encode_prompt)
+        self.monkey_patch('run_safety_checker', self._hooked_run_safety_checker, strict=False)  # not present in SDXL
+        self.monkey_patch('check_inputs', self._hooked_check_inputs)
 
 
 class UNetCrossAttentionHooker(ObjectHooker[Attention]):
