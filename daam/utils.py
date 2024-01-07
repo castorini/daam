@@ -73,12 +73,16 @@ def cache_dir() -> Path:
 def compute_token_merge_indices(tokenizer, prompt: str, word: str, word_idx: int = None, offset_idx: int = 0):
     merge_idxs = []
     tokens = tokenizer.tokenize(prompt.lower())
+    tokens = [x.replace('</w>', '') for x in tokens]  # New tokenizer uses wordpiece markers.
+
     if word_idx is None:
         word = word.lower()
-        search_tokens = tokenizer.tokenize(word)
+        search_tokens = [x.replace('</w>', '') for x in tokenizer.tokenize(word)]  # New tokenizer uses wordpiece markers.
         start_indices = [x + offset_idx for x in range(len(tokens)) if tokens[x:x + len(search_tokens)] == search_tokens]
+
         for indice in start_indices:
             merge_idxs += [i + indice for i in range(0, len(search_tokens))]
+
         if not merge_idxs:
             raise ValueError(f'Search word {word} not found in prompt!')
     else:

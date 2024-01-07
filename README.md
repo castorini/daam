@@ -4,7 +4,7 @@
 
 ![example image](example.jpg)
 
-### Updated to support Diffusers 0.16.1!
+### Updated to support Stable Diffusion XL (SDXL) and Diffusers 0.21.1!
 
 I regularly update this codebase. Please submit an issue if you have any questions.
 
@@ -33,6 +33,7 @@ dog.heat_map.png  running.heat_map.png  prompt.txt
 ```
 Your current working directory will now contain the generated image as `output.png` and a DAAM map for every word, as well as some auxiliary data.
 You can see more options for `daam` by running `daam -h`.
+To use Stable Diffusion XL as the backend, run `daam --model xl-base-1.0 "Dog jumping"`.  
 
 ### Using DAAM as a Library
 
@@ -40,23 +41,23 @@ Import and use DAAM as follows:
 
 ```python
 from daam import trace, set_seed
-from diffusers import StableDiffusionPipeline
+from diffusers import DiffusionPipeline
 from matplotlib import pyplot as plt
 import torch
 
 
-model_id = 'stabilityai/stable-diffusion-2-base'
+model_id = 'stabilityai/stable-diffusion-xl-base-1.0'
 device = 'cuda'
 
-pipe = StableDiffusionPipeline.from_pretrained(model_id, use_auth_token=True)
+pipe = DiffusionPipeline.from_pretrained(model_id, use_auth_token=True, torch_dtype=torch.float16, use_safetensors=True, variant='fp16')
 pipe = pipe.to(device)
 
 prompt = 'A dog runs across the field'
 gen = set_seed(0)  # for reproducibility
 
-with torch.cuda.amp.autocast(dtype=torch.float16), torch.no_grad():
+with torch.no_grad():
     with trace(pipe) as tc:
-        out = pipe(prompt, num_inference_steps=30, generator=gen)
+        out = pipe(prompt, num_inference_steps=50, generator=gen)
         heat_map = tc.compute_global_heat_map()
         heat_map = heat_map.compute_word_heat_map('dog')
         heat_map.plot_overlay(out.images[0])
